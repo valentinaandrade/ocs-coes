@@ -7,18 +7,18 @@
   <meta name="googlebot" content="index,follow,snippet,archive">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   
-  <title>Cohesión Social en Chile</title>
+  <title>Cohesión social en Chile - ELSOC</title>
   <meta name="author" content="OCS" />
   
   
   
   
-  <meta name="keywords" content="cohesion, visualizador, LAPOP, shiny, indicadores, lapop, latinoamerica">
+  <meta name="keywords" content="cohesion, visualizador, LAPOP">
   
   
-  <meta name="description" content="Indicadores Comparativos de Cohesión Social para América Latina">
+  <meta name="description" content="Sitio desarrollado por valentinaandrade por template devcows usando hugo">
 
-  <meta name="generator" content="Hugo 0.107.0">
+  <meta name="generator" content="Hugo 0.122.0">
 
   
   <link href='//fonts.googleapis.com/css?family=Roboto:400,100,100italic,300,300italic,500,700,800' rel='stylesheet' type='text/css'>
@@ -66,10 +66,10 @@
   
   <meta property="og:locale" content="es_cl">
   <meta property="og:site_name" content="Observatorio de Cohesión Social">
-  <meta property="og:title" content="Cohesión Social en Chile">
+  <meta property="og:title" content="Cohesión social en Chile - ELSOC">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://ocs-coes.netlify.app/app-elsoc/" />
-  <meta property="og:description" content="Indicadores Comparativos de Cohesión Social para América Latina">
+  <meta property="og:description" content="Sitio desarrollado por valentinaandrade por template devcows usando hugo">
   <meta property="og:image" content="https://ocs-coes.netlify.app/img/sharing-default.png">
   <meta property="og:image:type" content="image/png">
   
@@ -85,11 +85,11 @@
   
   <meta name="twitter:card" content="summary">
   <meta name="twitter:site" content="@CentroCOES">
-  <meta name="twitter:title" content="Cohesión Social en Chile">
+  <meta name="twitter:title" content="Cohesión social en Chile - ELSOC">
   
   <meta name="twitter:image" content="https://ocs-coes.netlify.app/img/sharing-default.png">
   
-  <meta name="twitter:description" content="Indicadores Comparativos de Cohesión Social para América Latina">
+  <meta name="twitter:description" content="Sitio desarrollado por valentinaandrade por template devcows usando hugo">
   
 
 </head>
@@ -135,9 +135,9 @@
         <div class="container">
             <div class="navbar-header">
                 <a class="navbar-brand home" href="/">
-                    <img src="/img/logo.png" alt="Cohesión Social en Chile logo" class="hidden-xs hidden-sm">
-                    <img src="/img/logo-small.png" alt="Cohesión Social en Chile logo" class="visible-xs visible-sm">
-                    <span class="sr-only">Cohesión Social en Chile - ir a inicio</span>
+                    <img src="/img/logo.png" alt="Cohesión social en Chile - ELSOC logo" class="hidden-xs hidden-sm">
+                    <img src="/img/logo-small.png" alt="Cohesión social en Chile - ELSOC logo" class="visible-xs visible-sm">
+                    <span class="sr-only">Cohesión social en Chile - ELSOC - ir a inicio</span>
                 </a>
                 <div class="navbar-buttons">
                     <button type="button" class="navbar-toggle btn-template-main" data-toggle="collapse" data-target="#navigation">
@@ -172,9 +172,11 @@
                       <a href="#" class="dropdown-toggle" data-toggle="dropdown" role="button" aria-haspopup="true" aria-expanded="false">Analisis <span class="caret"></span></a>
                     <ul class="dropdown-menu">
                       
-                        <li><a href="/app/">América Latina</a></li>
-                      
                         <li><a href="/app-elsoc/">Chile</a></li>
+                      
+                        <li><a href="/app/">LAPOP</a></li>
+                      
+                        <li><a href="/cohesion-la/">América Latina</a></li>
                       
                     </ul>
                     
@@ -214,7 +216,7 @@
     <div class="container">
         <div class="row">
             <div class="col-md-12">
-                <h1>Cohesión Social en Chile</h1>
+                <h1>Cohesión social en Chile - ELSOC</h1>
             </div>
         </div>
     </div>
@@ -231,18 +233,13 @@
                     <div class="col-md-12">
 
                         <div>
-                          
-<script src="/rmarkdown-libs/header-attrs/header-attrs.js"></script>
-
-
-<div class="heading">
-<h1>
-En desarrollo
-</h1>
-</div>
-<blockquote>
-<p>Proximamente: Visualización del Análisis Longitudinal usando ELSOC</p>
-</blockquote>
+                            <iframe src="/pages/chile_elsoc.html" id="miIframe" border:none style="width:100% ; border: 0!important; margin-bottom: 100px" onload="ajustarAltura()"></iframe>
+<script>
+function ajustarAltura() {
+    var iframe = document.getElementById('miIframe');
+    iframe.style.height = iframe.contentWindow.document.body.scrollHeight + 'px';
+}
+</script>
 
                         </div>
 

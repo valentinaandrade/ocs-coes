@@ -1,0 +1,2453 @@
+---
+# title: 'Construcción índices de Cohesión Social para América Latina'
+# subtitle: 'A partir de datos de encuestas LAPOP, Latinobarómetro y del World Value Survey.'
+# author: "Observatorio de Cohesión Social (OCS) - COES"
+format:
+  html:
+    embed-resources: true
+    page-layout: full
+    toc: false
+    toc-depth: 3
+    number-sections: true
+    number-depth: 2
+    theme:
+      light: cosmo
+      dark: [cosmo, theme-dark.scss]
+lang: es
+title-block-banner: false
+#title-block-banner-color: "#72CBE5"
+execute:
+  echo: false
+  #cache: true
+comments:
+   hypothesis: false
+# date: '2023-06-12'
+#date-format: short
+editor_options: 
+  chunk_output_type: console
+---
+
+<!-- <iframe src="https://jandimter.shinyapps.io/Cohesion3/" style="border: simple; width: 1135px; height: 850px" sandbox></iframe> -->
+
+
+Este documento tiene por intención constituir un aporte en el análisis de cohesión social en América Latina. Para esto, se
+utilizarán datos para el periodo 2004-2021 provenientes de las encuestas [LAPOP]((https://www.vanderbilt.edu/lapop/)),
+[Latinobarómetro](https://www.latinobarometro.org/lat.jsp) y de la [Encuesta Mundial de Valores (WVS)](https://www.worldvaluessurvey.org/wvs.jsp). La estrategia de operacionalización está basada en el documento ["Hacia una propuesta de medición de Cohesión Social con ELSOC" - Estudio Longitudinal Social de Chile / COESA](https://ocscoes.github.io/cohesion-elsoc/index.html).
+continuación se describen los datos y su procesamiento.
+
+# Datos
+
+A continuación se presentan los datos utilizados para la
+construcción de los índices. Se tomaron tres fuentes:
+
+1.  Las encuestas [LAPOP](https://www.vanderbilt.edu/lapop/).
+2.  Las encuestas [Latinobarómetro.](https://www.latinobarometro.org/lat.jsp)
+3.  Las encuestas del [World Value Survey](https://www.worldvaluessurvey.org/wvs.jsp).
+
+Los datos provenientes de LAPOP corresponden al mayor
+volumen da datos usados. Se tomó este estudio como la base
+para el resto de datos. En lo práctico, esto significó
+delimitar los países utilizados a aquellos contenidos por
+este estudio. Además, se tomaron sus olas (cada
+dos años) como estándar para la periodización del resto de la información.
+
+En la manipulación de datos, se reescalaron todas las
+variables utilizadas estableciendo una escala general de 0 a
+10, teniendo los valores mayores una representación de
+respuestas favorables a la cohesión social. En la
+descripción de datos se presentan las variables previamente
+reescaladas.
+
+## LAPOP
+
+La [encuesta LAPOP](https://www.vanderbilt.edu/lapop/), que significa "Latin American Public
+Opinion Project" (Proyecto de Opinión Pública
+Latinoamericana), es una iniciativa de investigación que
+tiene como objetivo medir y analizar las actitudes y
+opiniones de los ciudadanos en América Latina y el Caribe.
+Fue establecida en 2004 por la Universidad de Vanderbilt en
+los Estados Unidos y ha llevado a cabo varias rondas de
+encuestas en la región desde entonces.
+
+La encuesta LAPOP utiliza una metodología estandarizada para
+recopilar datos sobre una amplia gama de temas, incluyendo
+la democracia, la gobernabilidad, la corrupción, la
+seguridad ciudadana, la justicia, la participación política,
+los derechos humanos y la desigualdad social. Se basa en
+entrevistas cara a cara con una muestra representativa de la
+población en cada país participante.
+
+Uno de los aspectos destacados de la encuesta LAPOP es su
+enfoque comparativo, que permite analizar las tendencias y
+diferencias en la opinión pública entre los países de la
+región. Los resultados de la encuesta se utilizan para
+informar a académicos, responsables de políticas y
+organizaciones internacionales sobre la situación
+socio-política en América Latina, y se han convertido en una
+fuente importante de información y análisis en el campo de
+los estudios latinoamericanos.
+
+La encuesta ha desempeñado un papel importante en la
+comprensión de los desafíos y las dinámicas de la democracia
+en la región, así como en el diseño de políticas públicas
+orientadas a fortalecer la gobernabilidad y mejorar la
+calidad de vida de los ciudadanos en América Latina y el
+Caribe. Sus resultados han sido ampliamente citados y
+utilizados en investigaciones académicas, informes de
+desarrollo y debates políticos en la región.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE,message=FALSE, fig.align='center')
+```
+
+```{r Carga de librerías, include=FALSE}
+
+# Carga de librerías
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse,sjlabelled,countrycode,haven,questionr,wbstats,zoo,
+               sjPlot,sjmisc,dplyr,summarytools,flextable,data.table,
+               PerformanceAnalytics,plotly,countrycode,rnaturalearth,sf,leaflet,
+               shiny, kableExtra,DiagrammeR,survey,srvyr)
+library(DiagrammeR)
+
+# Configuraciones
+options(scipen=999)
+st_options(lang='es')
+options(OutDec=",")
+
+```
+
+```{r Funciones, include=FALSE}
+
+# 1. Función de estandarización de las escalas.
+## Descripción:
+## Esta función reescala las variables numéricas a un rango 0-10.
+## Excluye automáticamente variables que no sean de caracter numérico.
+# Argumentos:
+## df: Espera un dataframe.
+## exclude_cols: Se espera un vector con el nombre (character) de las variables que no se procesarán.
+
+standarize_data <- function(df, exclude_cols = NULL) {
+  cols <- setdiff(names(df)[sapply(df, is.numeric)], exclude_cols)
+  for(col in cols) {
+    old_min <- min(df[[col]], na.rm = TRUE)
+    old_max <- max(df[[col]], na.rm = TRUE)
+    new_min <- 0
+    new_max <- 10
+    df[[col]] <- ifelse(!is.na(df[[col]]), ((df[[col]] - old_min) / (old_max - old_min)) * 
+                        (new_max - new_min) + new_min, NA)
+  }
+  return(df)
+}
+
+# 2. Función de imputación de datos por olas.
+## Descripción:
+## Esta función aisla los datos de cada país por ola, identifica los casos
+# perdidos e imputa sus valores hasta 3 olas atrás y en caso de no encontrarse
+# hasta tres olas en el futuro.
+# Argumentos:
+## df: Espera un dataframe.
+## var: Indica la variable a imputar.
+impute_data <- function(df, var) {
+  # Contar NAs antes de la imputación
+  na_count_before <- sum(is.na(df[[var]]))
+
+  df %>% 
+    group_by(pais) %>% 
+    mutate(
+      temp = ifelse(is.na(!!sym(var)), lag(!!sym(var), 1), !!sym(var)), 
+      temp = ifelse(is.na(temp), lag(temp, 1), temp),
+      temp = ifelse(is.na(temp), lag(temp, 1), temp),
+      temp = ifelse(is.na(temp), lead(temp, 1), temp),
+      temp = ifelse(is.na(temp), lead(temp, 1), temp),
+      temp = ifelse(is.na(temp), lead(temp, 1), temp),
+      !!var := ifelse(is.na(!!sym(var)), temp, !!sym(var))) %>% 
+    select(-temp) -> df
+
+  # Contar NAs después de la imputación
+  na_count_after <- sum(is.na(df[[var]]))
+
+  # Calcular el número de imputaciones
+  imputations <- na_count_before - na_count_after
+
+  return(list(df = df, imputations = imputations))
+}
+
+
+
+# 3. Funcióm media sin NAs
+## Descripción:
+## Simple función que omite el agumento de rm.na=TRUE.
+# Argumentos:
+## ... = Valores a promediar.
+mean_na <- function(...) {
+  mean_result <- mean(c(...), na.rm = TRUE)
+  if (is.nan(mean_result)) {
+    mean_result <- NA
+  }
+  return(mean_result)
+}
+```
+
+```{r Carga de datos LAPOP, warning=FALSE,message=FALSE, include = FALSE,eval=FALSE}
+
+# Este bloque tiene eval = FALSE pues tarda.
+# Se almacenó el resultado en "data/Lapop_data_proms.RDS"
+
+# Se crean dos vectores con el nombre de variables LAPOP. Se distingue si apuntan
+# a indicadores horizontales o verticales. Posteriormente se utilizan para crear
+# el vector general usado para el subset.
+
+vars_hor <- c("b4","b43",
+          "it1",
+          "aoj11","sd2new2","sd3new2","sd6new2",#"colaoj21a",
+          "vicbar1","vicbar3","vicbar7","jamb18a",
+          "cp8")
+vars_ver <- c("b21a","b21","b18","b23","b10a","b39n","b13",
+              "pn4","b4","nicfear","prot3",
+              "pol1","vb2",
+              "movus1")
+vars <- c("wave","year","pais","wt",vars_hor,vars_ver)
+
+# A continuación se realiza la carga de archivos LAPOP.
+load(file = "data/GrandMerge.RData") 
+load(file="data/LAPOP_2004-2008.RData") # datos0418
+dta <- list.files(path = "data/lapop-faltantes/", pattern = ".dta")
+dta <- paste0(file = "data/lapop-faltantes/",dta)
+merge_faltante <- lapply(dta, function(archivo){
+  print(archivo)
+  df <- read_dta(archivo)
+  df <- df %>% select_if(names(df) %in% vars) %>% mutate(
+    wave = substr(archivo,nchar(archivo)-7,nchar(archivo)-4)
+  ) 
+  return(df)
+})
+rm(dta)
+merge_faltante <- bind_rows(merge_faltante)
+dta<- list.files(path = "data/LAPOP2021/", pattern = ".dta")
+dta <- paste0(file = "data/LAPOP2021/",dta)
+
+data2021 <- lapply(dta, function(archivo){
+  print(archivo)
+  df <- read_dta(archivo)
+  df <- df %>% select_if(names(df) %in% vars)
+  return(df)
+})
+data2021 <- bind_rows(data2021) ; rm(dta)
+
+datos0418 <- datos0418 %>% select_if(names(datos0418) %in% vars)
+datos1618 <-  datos0418  %>% filter(wave==2016 | wave==2018)
+datos1618$wave <- as.numeric(datos1618$wave)
+datos$wave <- NA
+datosselc <- datos %>% select_if(names(datos) %in% vars)
+
+# Los casos se recodifican de tal modo wave (olas): 
+# 2004(2004), 2006(2006 y 2007),  2008(2008 y 2009), 2010(2010), 2012(2012), 2014(2014), 2016(16,17), 2018(18,19)
+datosselc$wave <- ifelse(datosselc$year==2006 | datosselc$year==2007, 2006, NA)
+datosselc$wave <- ifelse(datosselc$year==2004 , 2004, datosselc$wave)
+datosselc$wave <- ifelse(datosselc$year==2008 | datosselc$year==2009, 2008, datosselc$wave)
+datosselc$wave <- ifelse(datosselc$year==2010, 2010, datosselc$wave)
+datosselc$wave <- ifelse(datosselc$year==2012, 2012, datosselc$wave)
+datosselc$wave <- ifelse(datosselc$year==2014, 2014, datosselc$wave)
+
+datosselc <- remove_all_labels(datosselc) # Las etiquetas no son compatibles
+merge_faltante <- mutate_all(merge_faltante, as.numeric)
+merge_faltante$year <- merge_faltante$wave
+
+data2021 <- mutate_all(data2021, as.numeric)
+data2021$year <- data2021$wave
+
+# Merge 2004-2014 + 2018 + faltantes varias del grand merge + 2021
+datos <- bind_rows(datosselc,datos1618,merge_faltante,data2021) # logra una base longitudinal con la pr4 incluida. 
+datos <- copy_labels(datos, datos0418)
+rm(list = setdiff(ls(),c("datos","vars","vars_hor","vars_ver","mean_result")))
+datos_label <- to_label(datos)
+datos$pais<-datos_label$pais
+
+# Se incorporan etiquetas faltantes
+datos$movus1 <- set_label(datos$movus1, "Movilidad económica")
+datos$jamb18a <- set_label(datos$jamb18a, "Confianza en la policía del barrio")
+datos$b39n <- set_label(datos$b39n, "¿Hasta qué punto tiene usted confianza en el sector privado?")
+
+# Se invierte sentido de respuestas para ajustar escalas (valores mayores ~ mayor cohesión).
+datos <- datos %>%
+  mutate(cp8 = 5 - cp8,
+         it1 = 5 - it1,
+         prot3 = 3 -prot3,
+         aoj11 = 5 - aoj11,
+         sd2new2 = 5 - sd2new2,
+         sd3new2 = 5 - sd3new2,
+         sd6new2 = 5 - sd6new2,
+         pn4 = 5 -pn4,
+         vb2 = 3-vb2,
+         pol1 = 5-pol1,
+         b23 = set_na(b23,na=8),
+         nicfear = 3 - nicfear
+         )
+
+# Especifica las columnas para excluir
+exclude_cols = c("wave", "pais","wt")
+
+# Estandariza los datos
+prom_wave <- standarize_data(datos, exclude_cols) %>% select(-year)
+
+###########
+
+vars_mod <- names(prom_wave)[c(3:21,23:28)]
+
+prom_wave <- svydesign(ids = ~1,
+                       data = prom_wave,
+                       weights = ~wt) %>%
+  as_survey() %>%
+  group_by(pais, wave) %>%
+  summarize_all(survey_mean, na.rm = TRUE) %>%
+  select(c("pais","wave"),vars_mod)
+
+# Supongamos que tu dataframe se llama test
+# Excluimos la columna "pais" del proceso
+columnas_a_modificar <- setdiff(names(prom_wave), "pais")
+
+# Aplicamos la función replace solo a las columnas seleccionadas
+prom_wave[columnas_a_modificar] <- sapply(prom_wave[columnas_a_modificar], function(x) replace(x, x == 0, NA))
+
+# test <- prom_wave %>%
+#   group_by(pais,wave) %>%
+#   summarise_if(is.numeric, mean, na.rm = TRUE) %>%
+#   ungroup() %>%
+#   select(-wt)
+
+# datos_sin_agrupar <- ungroup(prom_wave)
+# Convertir a data.frame
+# prom_wave <- as.data.frame(datos_sin_agrupar)
+prom_wave <- copy_labels(prom_wave, datos_label)
+
+prom_wave$movus1 <- set_label(prom_wave$movus1, "Movilidad económica")
+prom_wave$jamb18a <- set_label(prom_wave$jamb18a, "Confianza en la policía del barrio")
+prom_wave$b39n <- set_label(prom_wave$b39n, "¿Hasta qué punto tiene usted confianza en el sector privado?")
+prom_wave <- prom_wave %>% ungroup()
+
+# Se almacena la data.
+write_rds(prom_wave,"data/Lapop_data_proms.RDS")
+```
+
+```{r Creación descriptivos LAPOP, results='asis'}
+LAPOP <- read_rds("data/Lapop_data_proms.RDS") # Promedios por ola-país
+```
+
+:::: {.columns}
+
+::: {.column width="40%"}
+
+### Países por cada ola
+
+La encuesta LAPOP investiga América Latina y el Caribe,
+recopilando datos sobre actitudes y opiniones de los
+ciudadanos. Su objetivo es analizar temas como democracia,
+gobernabilidad, corrupción, seguridad ciudadana,
+participación política, derechos humanos y desigualdad
+social. A través de entrevistas cara a cara, proporciona
+información comparativa entre los países de la región,
+informando a académicos, responsables de políticas y
+organizaciones internacionales. Su fin es comprender los
+desafíos de la democracia y fortalecer la gobernabilidad,
+influyendo en el diseño de políticas públicas y mejorando la
+calidad de vida en América Latina y el Caribe.
+
+A continuación se presentan los países incluidos por olas:
+
+<!-- Creación de tabla con países disponibles por año -->
+:::
+
+::: {.column width="5%"}
+
+:::
+
+::: {.column width="55%"}
+```{r}
+
+# Se crea tabla, se excluyen países con 0 caso y se da formato.
+tabla <- table(LAPOP$pais, LAPOP$wave) %>%
+  as.data.frame.matrix() %>%
+  filter(!rowSums(.) == 0)
+
+tabla<-tabla[sort(rownames(tabla)),]%>%
+  rbind(colSums(.)) %>%
+  rownames_to_column("País")
+tabla$País[nrow(tabla)] <- "Total"
+
+# Se reemplazan 1 y 0 por íconos.
+for (col in names(tabla)) {
+  tabla[[col]] <- ifelse(tabla[[col]] == 1, '✅ ', tabla[[col]])
+}
+for (col in names(tabla)) {
+  tabla[[col]] <- ifelse(tabla[[col]] == 0, '❌', tabla[[col]])
+}
+
+# Visualización.
+tabla%>%
+  flextable() %>%
+    theme_alafoli()%>%
+   autofit() %>%
+  bold(i = 26)
+rm(col,tabla)
+```
+
+:::
+
+::::
+
+### Variables de interés LAPOP
+
+Se han seleccionado variables que resultan acordes al
+objetivo de este trabajo. Cada caso corresponde a un año-país. A partir de esta revisión se
+determina si son aptas para su utilización.
+
+```{r Descriptivos LAPOP, results='asis'}
+# Tabla hecha con summarytools:dfSummary()
+
+print(dfSummary(LAPOP,
+          headings=FALSE,
+          style = "multiline",
+          plain.ascii = FALSE,
+          tmp.img.dir = 'tmp',
+          varnumbers = FALSE,
+          silent= TRUE,
+          split.by = NULL),
+      max.tbl.height = 500,
+      method = 'render',
+      # css.class = 'table',
+      silent = TRUE,
+      footnote = NA)
+
+LAPOP <- LAPOP[order(LAPOP$pais),] %>%
+        filter(!pais %in% c("Suriname","Bahamas","Barbados","Grenada",
+                            "Saint Lucia","Dominica","Saint Kitts and Nevis",
+                            "Saint Vincent and the Grenadines")) %>%
+        filter(wave != 2021) %>%
+        select(-c(b43,vicbar1,vicbar3,vicbar7,jamb18a,b23,b39n,nicfear,
+                  movus1))
+```
+
+A partir de la revisión anterior se ha determinado la
+exclusión de las variables:
+
+-   Pride in Nationality (b43) presente en solo el **12.7%**
+    de los países-años.
+-   Burglaries in the Neighborhood (vicbar1) presente en
+    solo el **14.2%** de los países-años.
+-   Sales of Illegal Drugs in the Neighborhood () presente
+    en solo el **14.2%** de los países-años.
+-   Murders in the Neighborhood (vicbar7) presente en solo
+    el **18.3%** de los países-años.
+-   Confianza en la policía del barrio (jamb18a) presente en
+    solo el **0.5%** de los países-años.
+-   Trust in Unions (b23) presente en solo el **0.5%** de
+    los países-años.
+-   ¿Hasta qué punto tiene usted confianza en el sector
+    privado? (b39n) presente en solo el **0.5%** de los
+    países-años.
+-   Attitude towards Political Discussions (nicfear)
+    presente en solo el **1.5%** de los países-años.
+-   Movilidad económica (movus1) presente en solo el
+    **0.5%** de los países-años.
+
+**Debido a la baja presencia de las variables de interés en
+los datos del 2021 se trabajará tomando como límite la ola
+2018.**
+
+### Imputación LAPOP
+
+Al revisar las primeras filas del dataset se constata la
+existencia de datos perdidos en las variables de interés.
+
+Ante esto, se realiza una estrategia de imputación que
+utilice las medias más cercanas en el tiempo. Se tiene por
+límite hasta 3 olas, y en un segundo paso, hasta 3 olas
+posteriores. A continuación se presenta un fragmento de los datos con el resultado de la
+imputación a modo de ejemplo.
+
+::: panel-tabset
+#### Antes
+
+```{r}
+# Representación de NAs LAPOP
+# Reminder: `LAPOP` es el objeto base que se carga de los datos elaborados LAPOP.
+# Desde aquí estos datos comienzan a manipularse.
+
+# Por baja disponibilidad de los datos revisados previamente se excluyen países, ola 2021 y variables identificadas .
+
+LAPOP <- LAPOP[order(LAPOP$pais),]
+
+# Se completan filas para que cada país tenga todas las olas (aunque sean NA).
+df_complete <- expand_grid(wave = unique(LAPOP$wave), 
+                           pais = unique(LAPOP$pais))
+LAPOP <- left_join(df_complete, LAPOP, by = c("wave", "pais"))
+LAPOP <- LAPOP[order(LAPOP$pais),]
+rm(df_complete)
+
+# Visualización de NAs
+LAPOP %>%
+  head(16) %>%
+  mutate(wave = as.factor(wave))%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+  nan_str = "NA",) %>%
+  align(align = "center", part = "all") %>% 
+  bg(i = ~ is.na(prot3) ,j=~ prot3, bg = "#E73C6D") %>%
+  color(i = ~ is.na(prot3),j=~ prot3, color='white')%>%
+  
+  bg(i = ~ is.na(sd2new2) ,j=~ sd2new2, bg = "#E73C6D") %>%
+  color(i = ~ is.na(sd2new2),j=~ sd2new2, color='white')%>%
+
+bg(i = ~ is.na(sd3new2) ,j=~ sd3new2, bg = "#E73C6D") %>%
+  color(i = ~ is.na(sd3new2),j=~ sd3new2, color='white')%>%
+
+bg(i = ~ is.na(sd6new2) ,j=~ sd6new2, bg = "#E73C6D") %>%
+  color(i = ~ is.na(sd6new2),j=~ sd6new2, color='white')%>%
+
+bg(i = ~ is.na(pol1) ,j=~ pol1, bg = "#E73C6D") %>%
+  color(i = ~ is.na(pol1),j=~ pol1, color='white')%>%
+  
+bg(i = ~ is.na(b10a) ,j=~ b10a, bg = "#E73C6D") %>%
+  color(i = ~ is.na(b10a),j=~ b10a, color='white')%>%
+  
+  bg(i = ~ is.na(b21) ,j=~ b21, bg = "#E73C6D") %>%
+  color(i = ~ is.na(b21),j=~ b21, color='white')%>%
+
+bg(i = ~ is.na(b21a) ,j=~ b21a, bg = "#E73C6D") %>%
+  color(i = ~ is.na(b21a),j=~ b21a, color='white')
+```
+
+#### Después
+
+```{r}
+# Se realiza proceso de imputación LAPOP
+
+# Se identifican las variables numéricas de prom, excluyendo 'wave'.
+numeric_vars <- names(LAPOP)[sapply(LAPOP, is.numeric)]
+numeric_vars <- setdiff(numeric_vars, "wave")
+
+# Calcula el número total de filas en el dataframe
+total_rows <- nrow(LAPOP)
+
+# Inicializa una lista para almacenar los resultados
+imputation_results <- list()
+
+# Ejecuta la imputación y almacena los resultados
+for(var in numeric_vars) {
+  result <- impute_data(LAPOP, var)
+  LAPOP <- result$df
+  n_imputations <- result$imputations
+  percentage <- round((n_imputations / total_rows) * 100,2)
+  imputation_results[[var]] <- c(n = n_imputations, percentage = percentage)
+}
+
+# Convierte la lista de resultados en un dataframe
+imputation_summary <- as.data.frame(do.call(rbind, imputation_results))
+rownames(imputation_summary) <- numeric_vars
+# imputation_summary
+rm(numeric_vars,var)
+
+# Visualización del resultado.
+LAPOP %>%
+  head(16)%>%
+  mutate(wave = as.factor(wave))%>%
+  # replace(is.na(prom), "NA")%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  # colformat_num(big.mark = "",decimal.mark = ",", digits = 1) %>% 
+  align(align = "center", part = "all") %>%
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+  nan_str = "NA",) %>%
+  bg(i = ~ is.na(sd2new2) ,j=~ sd2new2, bg = "#E73C6D") %>%
+  color(i = ~ is.na(sd2new2),j=~ sd2new2, color='white')%>%
+
+bg(i = ~ is.na(sd3new2) ,j=~ sd3new2, bg = "#E73C6D") %>%
+  color(i = ~ is.na(sd3new2),j=~ sd3new2, color='white')%>%
+
+bg(i = ~ is.na(sd6new2) ,j=~ sd6new2, bg = "#E73C6D") %>%
+  color(i = ~ is.na(sd6new2),j=~ sd6new2, color='white')%>%
+  
+  bg(i = ~ is.na(b10a) ,j=~ b10a, bg = "#E73C6D") %>%
+  color(i = ~ is.na(b10a),j=~ b10a, color='white')%>%
+
+  bg(i = c(1:3,9:11) ,j=~ prot3, bg = "#66B16A") %>%
+  color(i = c(1:3,9:11),j=~ prot3, color='white')%>%  
+
+  bg(i = c(1:2,9:10) ,j=~ b21a, bg = "#66B16A") %>%
+  color(i = c(1:2,9:10),j=~ b21a, color='white')%>%  
+    
+  bg(i = c(2:4,10:12) ,j=~ sd2new2, bg = "#66B16A") %>%
+  color(i = c(2:4,10:12),j=~ sd2new2, color='white')%>%
+  
+    bg(i = c(2:4,10:12) ,j=~ sd3new2, bg = "#66B16A") %>%
+  color(i = c(2:4,10:12),j=~ sd3new2, color='white')%>%
+  
+    bg(i = c(2:4,10:12) ,j=~ sd6new2, bg = "#66B16A") %>%
+  color(i = c(2:4,10:12),j=~ sd6new2, color='white')%>%
+  
+      bg(i = c(7:8,15:16) ,j=~ b10a, bg = "#66B16A") %>%
+  color(i = c(7:8,15:16),j=~ b10a, color='white')%>%
+  
+        bg(i = c(9) ,j=~ b21, bg = "#66B16A") %>%
+  color(i = c(9),j=~ b21, color='white')%>%
+  
+    bg(i = c(1,9) ,j=~ pol1, bg = "#66B16A") %>%
+  color(i = c(1,9),j=~ pol1, color='white')
+```
+
+Resumen de datos (caso equivalente a país-año) imputados por variable:
+
+```{r}
+imputation_summary %>%
+  mutate(`Total` = 200) %>%
+  select(n,Total,percentage) %>%
+  set_names(c("Nº casos imputados","Casos totales","Porcentaje imputado")) %>%
+  kable() 
+```
+
+
+:::
+
+De este modo, las únicas variables que mantendrían casos
+perdidos posterior a la imputación serían *Satisfaction with Roads*
+(`sd2new2`), *Satisfaction with Public Schools* (`sd3new2`)
+y *Satisfaction with Public Medical and Health Services*
+(`sd6new2`) con 16,5% del total, para cada una.
+
+```{r Análisis casos perdidos para sustentar afirmación del parr,eval=FALSE}
+prop_casos_perdidos <- function(variable) {
+  prop <- round(sum(is.na(variable)) / length(variable) *100,1)
+  return(prop)
+}
+
+# Crear la tabla de proporción de casos perdidos por variable
+tabla_prop_perdidos <- data.frame(
+  Variable = colnames(prom),
+  Proporcion_Casos_Perdidos = sapply(prom, prop_casos_perdidos)
+)%>%t()
+```
+
+```{r Almacenado datos LAPOP}
+saveRDS(LAPOP,"data/data_lapop.rds")
+```
+
+## Latinobarómetro
+
+:::: {.columns}
+
+::: {.column width="35%"}
+
+[Latinobarómetro](https://www.latinobarometro.org/lat.jsp) es un estudio de opinión pública que se
+lleva a cabo anualmente en América Latina desde 1995. Su
+objetivo principal es medir y analizar las actitudes,
+creencias y valores de los ciudadanos en la región.
+
+El estudio utiliza una metodología de encuestas de opinión
+aplicadas a una muestra representativa de la población
+adulta en 18 países latinoamericanos. Las encuestas se basan
+en cuestionarios estructurados y abordan una amplia gama de
+temas, como la democracia, la economía, la política, la
+confianza en las instituciones, la religión, la identidad y
+otros asuntos sociales.
+
+### Países por cada ola
+
+Las olas originales son recodificadas según años pares equiparándolas de la Encuesta LAPOP, utilizada como base. Así,
+se incluye en el análisis 8 olas de Latinobarómetro que contienen la totalidad
+de los países estudiados en cada iteración. Se incorpora en tabla países presentes en LAPOP como
+referencia.
+
+:::
+
+::: {.column width="5%"}
+
+:::
+
+::: {.column width="60%"}
+
+```{r Breve limpieza}
+rm(list=setdiff(ls(),c("LAPOP","prop_casos_perdidos",
+               "standarize_data","impute_data","mean_na")))
+```
+
+```{r Variables Latinobarómetro a utilizar, warning=FALSE, message=FALSE, include = FALSE,eval=FALSE}
+# Justicia en distribución
+redistribucion <- data.frame(
+    variable = c("p17st","p26st.e","p14st","P12ST","P12ST","P27ST","P18ST",
+                 "P21ST","P20ST","P23ST"),
+    año=c(2007, 2008, 2009, 2010, 2011, 2013, 2015, 2016, 2017, 2018),
+    descripcion=c("Es justa la distribución del ingreso", # 1 Muy justa 4 Muy injusta
+                  "Garantías: Justa distribución de la riqueza", #1 Completamente garantizadas 4 Para nada garantizadas
+                  "Es justa la distribución del ingreso", ## 1 Muy justa 4 Muy injusta
+                  "Es justa la distribución del ingreso", ## 1 Muy justa 4 Muy injusta
+                  "¿Cuán justa cree Ud. que es la distribución del ingreso en (país)?", # 1 Muy justa 4 Muy injusta
+                  "Cómo de justa es la distribución del ingreso en el país", # 1 Muy justa 4 Muy injusta
+                  "Cómo de justa es la distribución del ingreso en el país",# 1 Muy justa 4 Muy injusta
+                  "Cómo de justa es la distribución del ingreso en el país",# 1 Muy justa 4 Muy injusta
+                  "Cómo de justa es la distribución del ingreso en el país",# 1 Muy justa 4 Muy injusta
+                  "Cómo de justa es la distribución del ingreso en el país"# 1 Muy justa 4 Muy injusta
+                  ),
+    standard='Es justa la distribucion de ingreso/riqueza',
+    code='justiciaingresoriqueza')
+
+# Frecuencia de hablar sobre política
+hablarpolitica <- data.frame(
+  variable = c("p71sta","p37st.aa","p61st","P30TGB.A","P20TGB.A"),
+  año = c(2005,2006,2007,2013,2015),
+  descripcion=c(rep('Frecuencia con que habla de política',3),
+                rep("Frecuencia con la que hace las siguientes cosas: hablar de
+                    política con los amigos.",2)),
+  standard='Frecuencia con que habla de política',
+  code='hablarpolitica')
+
+# Frecuencia de tratar de convencer políticamente
+convencerpoliticamenre <-
+  data.frame(
+    variable = c("p71stb", "p37st.ab", "P30ST.C", "P20ST.C"),
+    año = c(2005, 2006, 2013, 2015),
+    descripcion = c(
+      rep("Frecuencia con que trata de convencer políticamente", 2),
+      rep("Frecuencia con la que hace las siguientes cosas: tratar de convencer a alguien de lo que piensas políticamente.", 2)),
+    standard = 'Frecuencia intentar convencer políticamente',
+    code = 'convencerpolitica')
+
+# Frecuencia de firmar una petición
+firmarpeticion <-
+  data.frame(
+    variable = c("p72sta","p37st.ba","p62st.a","p82wvsta","P32STGBS","P21TGB.A"),
+    año = c(2005, 2006, 2007, 2008, 2013, 2015),
+    descripcion = c(
+      rep("Acción política: Firmar una petición", 4),
+      "P32STGBS Dispuesto a salir a marchar y protestar por: Juntarse con otras
+      personas para tratar un tema o firmar una petición",
+      "P21TGB.A Acciones que ha realizado: Juntarse con otras Personas para
+      tratar un tema o firmar una petición"),
+    standard = 'Ha firmado o está dispuesto a firmar una petición',
+    code = 'firmadopeticion')
+
+# Apoyo a la democracia
+apoyodemocracia <- data.frame(
+  variable = c("p13st", "p16st", "p17st", "p9st", "p13st", "p10st", "P10ST",
+             "P11STGBS", "P12STGBS", "P12STGBS", "P8STGBS", "P8STGBS"),
+  año = c(2004,2005,2006,2007,2008,2009,2010,2015,2013,2018,2016,2017),
+  descripcion = c("Apoyo a la democracia"),
+  standard='Apoyo a la democracia',
+  code='apoyodemocracia'
+)
+
+# Escala pobreza-riqueza hijos
+escala_hijos <- data.frame(
+  variable = c("p9stc", "p13st.c", "p6stmc", "p12st.c", "p17st.c", "P13ST.C",
+               "P10STC.C", "P11ST.C"),
+  año = c(2004, 2006, 2007, 2008, 2009, 2010, 2018, 2013),
+  descripcion = c(rep("Escala pobreza riqueza hijos",6),
+                  "P10STC.C Autoubicación en escala de pobreza-riqueza: Hijos",
+                  "P11ST.C Escala pobreza-riqueza hijos"),
+  standard='Riqueza hijos',
+  code='riquezahijos')
+
+# Escala pobreza-riqueza padres
+escala_padres <- data.frame(
+  #indice <- c(33, 547, 652, 950, 1319, 1721, 2077, 4193, 2880)
+  variable = c("p9stb", "p95st", "p13st.b", "p6stmb", "p12st.b", "p17st.b",
+                "P13ST.B", "P10STC.B", "P11ST.B"),
+  año = c(2004, 2005, 2006, 2007, 2008, 2009, 2010, 2018, 2013),
+  descripcion = c(rep("Escala pobreza riqueza padres",7),
+                   "P10STC.B Autoubicación en escala de pobreza-riqueza: Padres",
+                   "P11ST.B Escala pobreza-riqueza padres"),
+  standard = 'Riqueza padres',
+  code='riquezapadres'
+)
+
+# Escala pobreza-riqueza personal
+escala_personal <- data.frame(
+  variable = c("p9sta", "p13st.a", "p6stma", "p12st.a", "p17st.a", "P13ST.A",
+              "P10STC.A", "P11ST.A"),
+  año = c(2004, 2006, 2007, 2008, 2009, 2010, 2018, 2013),
+  descripcion = c(rep("Escala pobreza riqueza personal",6),
+                   "P10STC.A Autoubicación en escala de pobreza-riqueza: Personal",
+                   "P11ST.A Escala pobreza-riqueza personal"),
+  standard ='Riqueza personal',
+  code ='riquezapersonal'
+)
+
+variables <- rbind(apoyodemocracia,convencerpoliticamenre,escala_hijos,
+                   escala_padres,escala_personal,firmarpeticion,hablarpolitica,
+                   redistribucion)
+
+```
+
+```{r Carga de datos Latinobarómetro, warning=FALSE,message=FALSE, include = FALSE,eval=FALSE}
+# Carga de archivos
+dta <- list.files(path = "data/Latinobarometro/", pattern = ".sav")
+dta <- paste0(file = "data/Latinobarometro/",dta)
+resumen_latin<-data.frame()
+merge<-data.frame()
+
+for(i in dta){
+  print(i)
+  df <- read_sav(i)%>%
+    mutate(wave = substr(i,nchar(i)-7,nchar(i)-4)) 
+  
+  vars<- variables %>% filter(año==df$wave[1])
+  names(df)[names(df)=='IDENPA']<-'idenpa'
+  names(df)[names(df)=='WT']<-'wt'
+
+  df<- df%>% select_if(names(df) %in% c(vars$variable,"wave","idenpa","wt"))
+
+  for(z in 1:nrow(vars)){
+    names(df)[names(df)==vars$variable[z]]<-vars$code[z]
+  }
+
+  merge <- bind_rows(merge,df)
+
+}
+
+columnas <- setdiff(names(merge), c("idenpa", "wave","wt"))
+
+# Recorre cada una de las columnas y reemplaza los valores fuera del rango 1-10 con NA
+for(col in columnas){
+  merge[[col]] <- ifelse(merge[[col]] > 10 | merge[[col]] < 1, NA, merge[[col]])
+}
+
+# ## Revisión variables
+# for(i in dta){
+#     df <- read_sav(i)%>%
+#         mutate(wave = substr(i,nchar(i)-7,nchar(i)-4)) 
+#     wave_df <- df$wave[1]
+#     var <- convencerpoliticamenre$variable[convencerpoliticamenre$año==wave_df]
+#     try(
+#         print(frq(df[var]))
+#     )
+# }
+
+## Inversión escala variables (valores mayores representan mayor cohesión)
+merge$hablarpolitica <- 5 - merge$hablarpolitica
+merge$firmadopeticion <- 4 - merge$firmadopeticion
+merge$convencerpolitica <- 5 - merge$convencerpolitica
+merge$justiciaingresoriqueza <- 5 - merge$justiciaingresoriqueza
+merge$apoyodemocracia <- 4 - merge$apoyodemocracia
+
+# Formato labels
+merge$idenpa <- droplevels(sjlabelled::to_label(merge$idenpa))
+names(merge)[names(merge)=='idenpa']<-'pais'
+merge$wave <- as.numeric(merge$wave)
+
+# Exclusión España
+merge <- merge %>% filter(pais!='Spain')
+# Recodificación para estandarizar.
+levels(merge$pais)[levels(merge$pais) == "Dominican Rep."] <- "Dominican Republic"
+levels(merge$pais)[levels(merge$pais) == "Spain"] <- NA
+# Especifica las columnas para excluir
+exclude_cols = c("wave", "pais")
+# Estandariza los datos
+prom_wave_latin <- standarize_data(merge, exclude_cols)
+
+vars_mod <- names(prom_wave_latin)[c(2:5,8:11)]
+
+prom_wave_latin <- svydesign(ids = ~1,
+                       data = prom_wave_latin,
+                       weights = ~wt) %>%
+  as_survey() %>%
+  group_by(pais, wave) %>%
+  summarize_all(survey_mean, na.rm = TRUE) %>%
+  select(c("pais","wave"),vars_mod)
+
+# Supongamos que tu dataframe se llama test
+# Excluimos la columna "pais" del proceso
+columnas_a_modificar <- setdiff(names(prom_wave_latin), "pais")
+
+# Aplicamos la función replace solo a las columnas seleccionadas
+prom_wave_latin[columnas_a_modificar] <- sapply(prom_wave_latin[columnas_a_modificar], function(x) replace(x, x == 0, NA))
+
+#Ajuste años a pares
+prom_wave_latin$wave <- ifelse(prom_wave_latin$wave %% 2 == 1, prom_wave_latin$wave-1,prom_wave_latin$wave)
+
+prom_wave_latin <- prom_wave_latin %>%
+  group_by(wave,pais) %>%
+  summarise_if(is.numeric,
+               mean,
+               na.rm = TRUE) %>%
+  ungroup()
+```
+
+```{r,eval=FALSE}
+# Completar casos faltantes para estandarizar dataset final (se llenan con NAs).
+lapop_latin <- sort(as.vector(unique(c(unique(LAPOP$pais),unique(merge$pais)))))
+df_complete <- expand_grid(wave = unique(prom_wave_latin$wave), 
+                           pais = lapop_latin)
+
+# Se crea elemento for table exclusivamente para la tabla de disponibilidad de paises
+for_table <- merge(df_complete, prom_wave_latin, by = c("wave", "pais"), all = TRUE)
+for_table <- for_table[order(for_table$pais),]
+for_table <- prom_wave_latin
+levels(for_table$pais) <- c(levels(for_table$pais),setdiff(lapop_latin,levels(for_table$pais)))
+
+tabla <- table(for_table$pais, for_table$wave) 
+tabla <- tabla>0
+tabla <- tabla%>%
+  as.data.frame.matrix()
+
+tabla<-tabla[sort(rownames(tabla)),]%>%
+  rbind(colSums(.)) %>%
+  rownames_to_column("País")
+
+tabla$País[nrow(tabla)] <- "Total"
+
+for (col in names(tabla)) {
+  tabla[[col]] <- ifelse(tabla[[col]] == 1, '✅ ', tabla[[col]])
+}
+
+for (col in names(tabla)) {
+  tabla[[col]] <- ifelse(tabla[[col]] == 0, '❌', tabla[[col]])
+}
+
+ write_rds(tabla,"data/tabla_LB.RDS")
+ write_rds(merge,"data/merge_LB.RDS")
+write_rds(prom_wave_latin,"data/prom_wave_latin_LB.rds")
+```
+
+```{r}
+tabla <- readRDS("data/tabla_LB.RDS")
+merge <- readRDS("data/merge_LB.rds")
+prom_wave_latin <- readRDS("data/prom_wave_latin_LB.rds")
+
+# Visualización
+tabla %>%
+  flextable() %>%
+    theme_alafoli()%>%
+   autofit() %>%
+  bold(i = 26)
+```
+::: 
+
+::::
+
+### Descripción de datos
+
+```{r,results='asis'}
+print(dfSummary(merge %>% select(-wt),
+          headings=FALSE,
+          style = "multiline",
+          plain.ascii = FALSE,
+          tmp.img.dir = 'tmp',
+          varnumbers = FALSE,
+          silent= TRUE,
+          split.by = NULL),
+      max.tbl.height = 500,
+      method = 'render',
+      # css.class = 'table',
+      silent = TRUE,
+      footnote = NA)
+```
+
+### Transformación olas
+
+:::: {.columns}
+
+::: {.column width="25%"}
+
+Para equiparar la secuencia temporal de la Encuesta LAPOP, utilizada como base,
+luego de estimar las medias para cada año (utilizando los factores de expansión propios de cada muestra) se resta un dígito a los años impares. De este modo, por ejemplo, los datos del año 2012 se mantienen como tales, mientras que los de 2013 son recodificados como 2012. El par de medias se promedian excluyendo casos que correspondan a NA's. En el diagrama a continuación se presenta un par de ejemplos con estos casos.
+
+
+:::
+
+::: {.column width="5%"}
+:::
+
+::: {.column width="70%"}
+
+```{mermaid, eval=FALSE}
+graph BT
+    A[Media 2012 = 7] --> C["Al ser año par<br>no se recodifica"]
+    B[Media 2013 = 5] --> D["Al ser año impar<br>se recodifica"]
+    C --> E[Media 2012 = 7]
+    D --> F[Media 2012 = 5]
+    E --> G[Media 2012 = 6]
+    F --> G[Media 2012 = 6]
+
+    H[Media 2020 = 4] --> I["Al ser año par<br>no se recodifica"]
+    J[Media 2021 = NA] --> K["Al ser año impar<br>se recodifica"]
+    I --> L[Media 2020 = 4]
+    K --> M[Media 2020 = NA]
+    L --> N[Media 2020 = 4]
+    M --> N
+```
+
+:::
+
+::::
+
+### Nuevas variables
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+Se crean dos nuevas columnas a partir de las variables
+`riquezapersonal`, `riquzapadres` y `riquezahijos`. La
+columna `dif_padres` representa la variación de percepción
+de riqueza desde los padres hasta la personal.
+
+La columna `dif_hijos` representará la variación de
+percepción de riqueza desde la personal a la proyectada a
+hijos.
+
+:::
+
+::: {.column width="5%"}
+:::
+
+::: {.column width="45%"}
+
+
+**Fórmula dif_padres**
+
+$$
+\text{dif\_padres} = \text{riquezapersonal} - \text{riquezapadres}
+$$
+
+**Fórmula dif_hijos**
+
+$$\text{dif\_hijos} = \text{riquezahijos} - \text{riquezapersonal}$$
+:::
+
+::::
+
+#### Descripción de las nuevas variables
+
+```{r}
+prom_wave_latin$dif_padres <- prom_wave_latin$riquezapersonal - prom_wave_latin$riquezapadres
+prom_wave_latin$dif_hijos <- prom_wave_latin$riquezahijos - prom_wave_latin$riquezapersonal
+```
+
+```{r, results='asis'}
+print(dfSummary(prom_wave_latin %>% select(dif_padres,dif_hijos),
+                headings=FALSE,
+                method = 'render',
+                style = "grid",
+                plain.ascii = FALSE,
+                tmp.img.dir = 'tmp',
+                varnumbers = FALSE,
+                silent= TRUE,  split.by = NULL))
+```
+
+### Imputación Latinbarómetro
+
+Se replica la estrategia de imputación implementada en los
+datos LAPOP. Se imputa utilizando el dato más cercano hasta
+un máximo de 3 olas en el pasado, y en segunda instancia
+hasta 3 olas en el futuro. A continuación se presenta un fragmento de los datos con el resultado de la
+imputación a modo de ejemplo.
+
+::: panel-tabset
+#### Antes
+
+```{r}
+prom_wave_latin <- prom_wave_latin %>%
+  mutate(pais = droplevels(pais)) %>%
+  as_tibble()%>%
+  complete(wave,pais)
+
+prom_wave_latin[order(prom_wave_latin$pais),] %>%
+  head(16)%>%
+  mutate(wave = as.factor(wave))%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+  nan_str = "NA",)%>%
+  align(align = "center", part = "all") %>% 
+  
+bg(i = ~ is.na(riquezapersonal) ,j=~ riquezapersonal, bg = "#E73C6D") %>%
+  color(i = ~ is.na(riquezapersonal),j=~ riquezapersonal, color='white')%>%
+bg(i = ~ is.na(riquezapadres) ,j=~ riquezapadres, bg = "#E73C6D") %>%
+  color(i = ~ is.na(riquezapadres),j=~ riquezapadres, color='white')%>%
+bg(i = ~ is.na(riquezahijos) ,j=~ riquezahijos, bg = "#E73C6D") %>%
+  color(i = ~ is.na(riquezahijos),j=~ riquezahijos, color='white')%>%
+bg(i = ~ is.na(apoyodemocracia) ,j=~ apoyodemocracia, bg = "#E73C6D") %>%
+  color(i = ~ is.na(apoyodemocracia),j=~ apoyodemocracia, color='white')%>%
+bg(i = ~ is.na(hablarpolitica) ,j=~ hablarpolitica, bg = "#E73C6D") %>%
+  color(i = ~ is.na(hablarpolitica),j=~ hablarpolitica, color='white')%>%
+bg(i = ~ is.na(firmadopeticion) ,j=~ firmadopeticion, bg = "#E73C6D") %>%
+  color(i = ~ is.na(firmadopeticion),j=~ firmadopeticion, color='white')%>%
+bg(i = ~ is.na(justiciaingresoriqueza) ,j=~ justiciaingresoriqueza, bg = "#E73C6D") %>%
+  color(i = ~ is.na(justiciaingresoriqueza),j=~ justiciaingresoriqueza, color='white')%>%
+bg(i = ~ is.na(dif_hijos) ,j=~ dif_hijos, bg = "#E73C6D") %>%
+  color(i = ~ is.na(dif_hijos),j=~ dif_hijos, color='white')%>%
+bg(i = ~ is.na(dif_padres) ,j=~ dif_padres, bg = "#E73C6D") %>%
+  color(i = ~ is.na(dif_padres),j=~ dif_padres, color='white')%>%
+bg(i = ~ is.na(convencerpolitica) ,j=~ convencerpolitica, bg = "#E73C6D") %>%
+  color(i = ~ is.na(convencerpolitica),j=~ convencerpolitica, color='white')
+```
+
+#### Después
+
+```{r}
+
+# Se identifican las variables numéricas de prom, excluyendo 'wave'.
+numeric_vars <- names(prom_wave_latin)[sapply(prom_wave_latin, is.numeric)]
+numeric_vars <- setdiff(numeric_vars, "wave")
+
+# Calcula el número total de filas en el dataframe
+total_rows <- nrow(prom_wave_latin)
+
+# Inicializa una lista para almacenar los resultados
+imputation_results <- list()
+
+# Ejecuta la imputación y almacena los resultados
+for(var in numeric_vars) {
+  result <- impute_data(prom_wave_latin, var)
+  prom_wave_latin <- result$df
+  n_imputations <- result$imputations
+  percentage <- round((n_imputations / total_rows) * 100,2)
+  imputation_results[[var]] <- c(n = n_imputations, percentage = percentage)
+}
+
+# Convierte la lista de resultados en un dataframe
+imputation_summary <- as.data.frame(do.call(rbind, imputation_results))
+rownames(imputation_summary) <- numeric_vars
+# imputation_summary
+rm(numeric_vars,var)
+
+prom_wave_latin[order(prom_wave_latin$pais),] %>%
+  head(16)%>%
+  mutate(wave = as.factor(wave))%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  align(align = "center", part = "all") %>%
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+   nan_str = "NA",) %>%
+  bg(i = c(6:7,14:15) ,j=~ riquezapersonal, bg = "#66B16A") %>%
+    color(i = c(6:7,14:15),j=~ riquezapersonal, color='white')%>%
+  bg(i = c(6:7,14:15) ,j=~ riquezapadres, bg = "#66B16A") %>%
+    color(i = c(6:7,14:15),j=~ riquezapadres, color='white')%>%
+  bg(i = c(6:7,14:15) ,j=~ riquezahijos, bg = "#66B16A") %>%
+    color(i = c(6:7,14:15),j=~ riquezahijos, color='white')%>%
+  bg(i = c(3:4,7:8,11:12,15:16) ,j=~ hablarpolitica, bg = "#66B16A") %>%
+    color(i = c(3:4,7:8,11:12,15:16),j=~ hablarpolitica, color='white')%>%
+  bg(i = c(3:4,7:8,11:12,15:16) ,j=~ convencerpolitica, bg = "#66B16A") %>%
+    color(i = c(3:4,7:8,11:12,15:16),j=~ convencerpolitica, color='white') %>%
+  bg(i = c(4,7:8,12,15:16) ,j=~ firmadopeticion, bg = "#66B16A") %>%
+    color(i = c(4,7:8,12,15:16),j=~ firmadopeticion, color='white') %>%
+  bg(i = c(1,9) ,j=~ justiciaingresoriqueza, bg = "#66B16A") %>%
+    color(i = c(1,9),j=~ justiciaingresoriqueza, color='white') %>%
+  bg(i = c(6:7,14:15) ,j=~ dif_padres, bg = "#66B16A") %>%
+    color(i = c(6:7,14:15),j=~ dif_padres, color='white') %>%
+  bg(i = c(6:7,14:15) ,j=~ dif_hijos, bg = "#66B16A") %>%
+    color(i = c(6:7,14:15),j=~ dif_hijos, color='white')
+
+```
+
+Resumen de datos (caso equivalente a país-año) imputados por variable:
+
+```{r}
+imputation_summary %>%
+    mutate(`Total` = 200) %>%
+    select(n,Total,percentage) %>%
+    set_names(c("Nº casos imputados","Casos totales","Porcentaje imputado")) %>%
+    kable() 
+
+```
+
+:::
+
+De este modo, las variables consideradas quedan sin casos
+perdidos.
+
+```{r Almacenado datos latinobarómetro}
+saveRDS(prom_wave_latin,"data/data_latinobarometro.rds")
+```
+
+```{r Identificación de casos perdidos, eval=FALSE}
+prop_casos_perdidos <- function(variable) {
+  prop <- round(sum(is.na(variable)) / length(variable) *100,1)
+  return(prop)
+}
+
+# Crear la tabla de proporción de casos perdidos por variable
+tabla_prop_perdidos <- data.frame(
+  Variable = colnames(prom_wave_latin),
+  `Prop NA` = paste0(sapply(prom_wave_latin, prop_casos_perdidos),"%")
+) %>%
+  flextable()
+tabla_prop_perdidos
+```
+
+## World Values Survey
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+La [Encuesta Mundial de Valores](https://www.worldvaluessurvey.org/wvs.jsp) (World Values Survey en
+inglés) es una investigación sociológica a gran escala que
+tiene como objetivo examinar los valores y creencias de las
+personas en diferentes países. Fue iniciada en 1981 por
+Ronald Inglehart y actualmente es llevada a cabo por un
+equipo internacional de investigadores. Se centra en temas
+como la religión, la política, la moral, la familia, el
+trabajo, la confianza en las instituciones, la igualdad de
+género, entre otros. El objetivo es comprender cómo estos
+valores y actitudes han evolucionado a lo largo del tiempo y
+cómo difieren entre diferentes culturas y sociedades.
+
+La encuesta utiliza un cuestionario estandarizado que se
+aplica de manera consistente en todos los países
+participantes, lo que permite realizar comparaciones
+transnacionales y longitudinales. Además, se hace hincapié
+en la representatividad de la muestra para garantizar la
+validez de los resultados.
+
+```{r Carga de datos WVS}
+rm(list=setdiff(ls(),c("prop_casos_perdidos","standarize_data",
+                       "impute_data","mean_na")))
+
+# Los datos están contenidos en un ar
+load("data/WVS/WVS_TimeSeries_4_0.rdata")
+WVS <- data1 ; rm(data1)
+columnas <- names(label_to_colnames(WVS))
+data <- WVS %>% select(COW_NUM,S020,S017,E035,G006,H001)
+
+# data <- WVS[c(6,23,
+#               # 78,80,94:111,115,116,194,
+#               407,
+#               # 533,
+#               804,914)]
+respuestas <- to_label(data)
+data$COW_NUM<-respuestas$COW_NUM
+```
+
+```{r Se inviert escala,warning=FALSE}
+data <- data %>%
+  setNames(c("pais","wave","wt","igualdadingresos","orgullonacional","seguridadbarrio"))
+
+data$orgullonacional[data$orgullonacional<1] <- NA
+data$orgullonacional <- 5-data$orgullonacional
+data$igualdadingresos[data$igualdadingresos<1] <- NA
+data$igualdadingresos <- 11-data$igualdadingresos
+data$seguridadbarrio[data$seguridadbarrio<1] <- NA
+data$seguridadbarrio <- 5-data$seguridadbarrio
+
+# Filter país
+data <- data %>%
+  filter(pais %in% c("Argentina", "Bolivia", "Brazil", "Canada",
+                     "Chile", "Colombia", "Dominican Republic",
+                     "Ecuador","El Salvador", "Guatemala", "Haiti",
+                     "Mexico", "Nicaragua","Trinidad and Tobago",
+                     "Peru","Puerto Rico", "United States of America",
+                     "Uruguay","Venezuela")) %>%
+  filter(wave > 2003)
+
+# Especifica las columnas para excluir
+exclude_cols = c("wave", "pais","wt")
+# Estandariza los datos
+data <- standarize_data(data, exclude_cols)
+
+# data$wave[data$wave==2022] <- 2020
+
+vars_mod <- names(data)[c(4:6)]
+
+prom_wave <- svydesign(ids = ~1,
+                       data = data,
+                       weights = ~wt) %>%
+  as_survey() %>%
+  group_by(pais, wave) %>%
+  summarize_all(survey_mean, na.rm = TRUE) %>%
+  select(c("pais","wave"),vars_mod)
+
+# Supongamos que tu dataframe se llama test
+# Excluimos la columna "pais" del proceso
+columnas_a_modificar <- setdiff(names(prom_wave), "pais")
+
+# Aplicamos la función replace solo a las columnas seleccionadas
+prom_wave[columnas_a_modificar] <- sapply(prom_wave[columnas_a_modificar], function(x) replace(x, x == 0, NA))
+
+
+prom_wave$wave <- ifelse(prom_wave$wave %% 2 == 1,prom_wave$wave-1,prom_wave$wave)
+
+prom_wave <- prom_wave %>%
+  # select(-year) %>%
+  group_by(wave,pais) %>%
+  summarise_if(is.numeric, mean, na.rm = TRUE)
+```
+
+### Países por cada ola
+
+Los datos de la encuesta son recodificados en olas cada dos
+años siguiendo el esquema de la Encuesta LAPOP, al igual que se realiza con Latinobarómetro. Se hace una excepción con Uruguay
+2022, siendo reasignado como 2020. En sus registros formales
+el WVS agrupa olas que abarcan un periodo de alrededor de 5 años por
+cada iteración.
+
+:::
+
+::: {.column width="5%"}
+
+:::
+
+::: {.column width="45%"}
+
+```{r,warning=FALSE}
+# Creación tabla con disponibilidad de país por año
+prom_wave_wvs <- prom_wave %>%
+  mutate(pais = droplevels(pais)) %>%
+  as_tibble()%>%
+  complete(wave,pais)
+
+tabla <- table(prom_wave$pais, prom_wave$wave) 
+tabla <- tabla>0
+tabla <- tabla%>%
+  as.data.frame.matrix()
+
+tabla <- tabla %>%
+  filter(!rowSums(tabla) == 0)
+tabla<-tabla[sort(rownames(tabla)),]
+tabla <- tabla %>%
+  rbind(colSums(.)) %>%
+  rownames_to_column("País")
+
+for (col in names(tabla)) {
+  tabla[1:17,][[col]] <- ifelse(tabla[1:17,][[col]] == 1, '✅ ', tabla[1:17,][[col]])
+}
+
+for (col in names(tabla)) {
+  tabla[1:17,][[col]] <- ifelse(tabla[1:17,][[col]] == 0, '❌', tabla[1:17,][[col]])
+}
+tabla$País[nrow(tabla)] <- "Total"
+
+tabla$País[tabla$País=='United States of America'] <- "USA"
+
+# Visualización
+tabla %>%
+  flextable() %>%
+    theme_alafoli()%>%
+   autofit() %>%
+  bold(i = 18)
+```
+
+:::
+
+::::
+
+### Descripción de datos
+
+```{r Resumen variables WVS, results='asis'}
+print(dfSummary(data %>% select(-wt),
+          headings=FALSE,
+          style = "multiline",
+          plain.ascii = FALSE,
+          tmp.img.dir = 'tmp',
+          varnumbers = FALSE,
+          silent= TRUE,
+          split.by = NULL,
+          max.distinct.values = 15),
+      max.tbl.height = 500,
+      method = 'render',
+      # css.class = 'table',
+      silent = TRUE,
+      footnote = NA)
+```
+
+### Imputación WVS
+
+Se replica la estrategia de imputación implementada en los
+datos LAPOP. Se imputa utilizando el dato más cercano hasta
+un máximo de 3 olas en el pasado, y en segunda instancia
+hasta 3 olas en el futuro. Los datos de imputación incluyen hasta la ola 2022, sin embargo, los resultados se presentan hasta el 2018 siguiendo el formato LAPOP. A continuación se presenta un fragmento de los datos con el resultado de la
+imputación a modo de ejemplo.
+
+::: panel-tabset
+#### Antes
+
+```{r,warning=FALSE}
+# Chequeo NAs WVS
+prom_wave_wvs <- prom_wave_wvs %>%
+  mutate(pais = droplevels(pais)) %>%
+  as_tibble()%>%
+  complete(wave,pais)
+
+prom_wave_wvs[order(prom_wave_wvs$pais),] %>%
+  head(16)%>%
+  mutate(wave = as.factor(wave))%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+  nan_str = "NA",)%>%
+  align(align = "center", part = "all") %>% 
+
+  bg(i = ~ is.na(seguridadbarrio) ,j=~ seguridadbarrio, bg = "#E73C6D") %>%
+   color(i = ~ is.na(seguridadbarrio),j=~ seguridadbarrio, color='white') %>%
+  bg(i = ~ is.na(igualdadingresos) ,j=~ igualdadingresos, bg = "#E73C6D") %>%
+   color(i = ~ is.na(igualdadingresos),j=~ igualdadingresos, color='white') %>%
+  bg(i = ~ is.na(orgullonacional) ,j=~ orgullonacional, bg = "#E73C6D") %>%
+   color(i = ~ is.na(orgullonacional),j=~ orgullonacional, color='white')
+```
+
+```{r Imputación WVS,warning=FALSE}
+numeric_vars <- names(prom_wave_wvs)[sapply(prom_wave_wvs, is.numeric)]
+numeric_vars <- setdiff(numeric_vars, "wave")
+
+
+# Calcula el número total de filas en el dataframe
+total_rows <- nrow(prom_wave_wvs)
+
+# Inicializa una lista para almacenar los resultados
+imputation_results <- list()
+
+# Ejecuta la imputación y almacena los resultados
+for(var in numeric_vars) {
+  result <- impute_data(prom_wave_wvs, var)
+  prom_wave_wvs <- result$df
+  n_imputations <- result$imputations
+  percentage <- round((n_imputations / total_rows) * 100,2)
+  imputation_results[[var]] <- c(n = n_imputations, percentage = percentage)
+}
+
+# Convierte la lista de resultados en un dataframe
+imputation_summary <- as.data.frame(do.call(rbind, imputation_results))
+rownames(imputation_summary) <- numeric_vars
+# imputation_summary
+rm(numeric_vars,var)
+```
+
+#### Después
+
+```{r}
+# Tabla post-imputación de datos WVS
+prom_wave_wvs[order(prom_wave_wvs$pais),] %>%
+  head(16)%>%
+  mutate(wave = as.factor(wave))%>%
+  # replace(is.na(prom), "NA")%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+  nan_str = "NA",)%>%
+  align(align = "center", part = "all") %>% 
+
+  bg(i = ~ is.na(seguridadbarrio) ,j=~ seguridadbarrio, bg = "#E73C6D") %>%
+   color(i = ~ is.na(seguridadbarrio),j=~ seguridadbarrio, color='white') %>%
+  bg(i = ~ is.na(igualdadingresos) ,j=~ igualdadingresos, bg = "#E73C6D") %>%
+  color(i = ~ is.na(igualdadingresos),j=~ igualdadingresos, color='white') %>%
+  bg(i = ~ is.na(orgullonacional) ,j=~ orgullonacional, bg = "#E73C6D") %>%
+  color(i = ~ is.na(orgullonacional),j=~ orgullonacional, color='white') %>%
+  bg(i = c(2,3,5,6,8,9,11:16) ,j=~ igualdadingresos, bg = "#66B16A") %>%
+  color(i = c(2,3,5,6,8,9,11:16),j=~ igualdadingresos, color='white') %>%
+  bg(i = c(2,3,5,6,8,9,11:16) ,j=~ orgullonacional, bg = "#66B16A") %>%
+  color(i = c(2,3,5,6,8,9,11:16),j=~ orgullonacional, color='white') %>%
+  bg(i = c(1,2,3,5,6,8:9,13:16) ,j=~ seguridadbarrio, bg = "#66B16A") %>%
+  color(i = c(1,2,3,5,6,8:9,13:16),j=~ seguridadbarrio, color='white') 
+
+data_wvs <- prom_wave_wvs
+saveRDS(data_wvs,"data/data_wvs.rds")
+```
+
+Resumen de datos (caso equivalente a país-año) imputados por variable:
+
+```{r}
+imputation_summary %>%
+    mutate(`Total` = 200) %>%
+    select(n,Total,percentage) %>%
+    set_names(c("Nº casos imputados","Casos totales","Porcentaje imputado")) %>%
+    kable() 
+```
+
+
+:::
+
+```{r Revisión casos perdidos,eval=FALSE}
+prop_casos_perdidos <- function(variable) {
+  prop <- round(sum(is.na(variable)) / length(variable) *100,1)
+  return(prop)
+}
+
+# Crear la tabla de proporción de casos perdidos por variable
+tabla_prop_perdidos <- data.frame(
+  Variable = colnames(prom_wave_wvs),
+  `Prop NA` = paste0(sapply(prom_wave_wvs, prop_casos_perdidos),"%")
+) %>%
+  flextable()
+tabla_prop_perdidos
+```
+
+Luego de la imputación, la proporción de datos perdidos es
+de un 12,5% tanto para `igualdadingresos` como para
+`orgullonacional`. Para la variable `seguridadbarrio` esta
+alcanza un 19.1%.
+
+# Construcción Índices
+
+El dataset generado contiene los 175 casos iniciales de la
+encuesta LAPOP complementados con la información de los
+otros dos estudios. La información resultante está contenida
+en un total de 31 variables.
+
+```{r Merge general}
+# Se limpia el espacio de trabajo
+rm(list=setdiff(ls(),"mean_na"))
+# Comienza la carga de datos
+data_lapop <- readRDS("data/data_lapop.rds")
+data_latinobarometro <- readRDS("data/data_latinobarometro.rds")
+data_wvs <- readRDS("data/data_wvs.rds")
+
+# Ediciones de formato
+data_latinobarometro$pais <- as.character(data_latinobarometro$pais)
+data_lapop$pais <- as.character(data_lapop$pais)
+data_wvs$pais <- as.character(data_wvs$pais)
+
+# Recodificación para estandarizar
+data_latinobarometro$pais[data_latinobarometro$pais =='Dominican Rep.'] <- "Dominican Republic" 
+data_wvs$pais[data_wvs$pais =='Trinidad and Tobago'] <- "Trinidad & Tobago" 
+data_wvs$pais[data_wvs$pais =='United States of America'] <- "United States"
+
+# Merge
+datos <- merge(data_lapop,data_latinobarometro,by=c("pais","wave"),all.x = TRUE)
+datos <- merge(datos,data_wvs,by=c("pais","wave"),all.x = TRUE)
+```
+
+Para la construcción de cada índice se realizó el cálculo de
+la media entre los indicadores, todos previamente
+normalizados en una escala 0-10. Los valores ponderados para
+cada subdimensión se promediaron nuevamente para la
+estimación de dimensiones, y finalmente de cada índice. Para
+el cómputo del Índice de Cohesión General se calculó la
+media entre Índice de Cohesión Vertical y el Índice de
+Cohesión Horizontal. A continuación se presentan los
+resultados.
+
+Los items negros corresponden a dimensiones. Los de color verde a subdimensiones. Colores grises a indicadores. Para la construcción de esto últimos se utilizaron items de las encuestas revisadas anteriormente. En color azul items presentes en LAPOP, en color amarillo items de la World Value Survey y en color morado items de Latinobarómetro (LB).
+
+![](data/Esquema.svg)
+
+## Correlación indicadores por subdimensión
+
+Se aplica correlación de Pearson a indicadores que constituyen una subdimensión. Los valores son representativos para todos los países y todos los años estudiados.
+
+::: panel-tabset
+### Orgullo Nacional
+
+```{r Correlación Subdimensión Orgullo Nacional, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(datos %>% select(b4,orgullonacional) %>%
+                    setNames(c("Pride in Political System", "Orgullo Nacional")))
+```
+
+### Satisfacción Residencial
+
+```{r Correlación Subdimensión Satisfacción Residencial, warning=FALSE, fig.width=10}
+chart.Correlation(datos %>% select(aoj11,sd2new2,sd3new2,sd6new2,seguridadbarrio) %>%
+                    setNames(c("Perception of Neighborhood Insecurity", "Satisfaction with Roads",
+                             "Satisfaction with Public Schools","Satisfaction with Public Medical and Health Services","Seguridad del barrio")))
+```
+
+### Confianza en Instituciones
+
+```{r Correlación Subdimensión Confianza en Instituciones, warning=FALSE, fig.width=10}
+chart.Correlation(datos %>% select(b21a, b21, b18, b10a, b13) %>%
+                    setNames(c("Trust in Executive", "Trust in Political Parties",
+                               "Trust in National Police","Trust in Judicial System",
+                               "Trust in the National Legislature")))
+```
+
+### Apoyo a la Democracia
+
+```{r Correlación Subdimensión Apoyo a la Democracia, warning=FALSE, fig.width=10}
+chart.Correlation(datos %>% select(pn4, b4, apoyodemocracia) %>%
+                    setNames(c("Satisfaction with Democracy", "Pride in Political System",
+                             "Apoyo a la democracia")))
+```
+
+### Participación cívica
+
+```{r Correlación Subdimensión Participación cívica, warning=FALSE, fig.width=10}
+chart.Correlation(datos %>% select(prot3, hablarpolitica, convencerpolitica, firmadopeticion) %>%
+                    setNames(c("Participated in a Protest", "Frecuencia en la que habla de política",
+                             "Convencer políticamente","Firmar petición")))
+```
+
+### Interés Político
+
+```{r Correlación Subdimensión Interés Político, warning=FALSE, fig.width=10}
+chart.Correlation(datos %>% select(pol1, vb2) %>%
+                    setNames(c("Political Interest (w/PP)", "Votó usted en las últimas elecciones presidenciale
+                               s")))
+```
+
+### Justicia Distributiva
+
+```{r Correlación Subdimensión Justicia Distributiva, warning=FALSE, fig.width=10}
+chart.Correlation(datos %>% select(justiciaingresoriqueza, igualdadingresos) %>%
+                    setNames(c("Justicia ingreso/riqueza", "Igualdad de ingresos")))
+```
+
+### Surgir en la vida
+
+```{r Correlación Subdimensión Surgir en la vida, warning=FALSE, fig.width=10}
+chart.Correlation(datos %>% select(dif_hijos, dif_padres) %>%
+                    setNames(c("Diferencia riqueza hijos", "Diferencia riqueza padres")))
+```
+:::
+
+## Calidad subdimensiones
+
+De forma posterior a la imputación parcial realizada (no fue posible imputar todos los valores) se revisa la calidad de las subdimensiones a estimar. 
+
+### Proporción de indicadores disponibles por sub/dimensión.
+
+Los valores presentados corresponden al porcentaje de indicadores disponibles para un país específico en el total de años estudiados.
+
+```{r Calidad subdimensiones por año - revision por n disponibles}
+
+# Se cuenta por cada dimensión cuántos de los indicadores no corresponden a valores NA.
+calidad_year_n <- datos %>%
+  group_by(pais,wave)%>%                                                                                      # Máximo
+  summarise(sub_orgullonacional = sum(!is.na(c(b4,orgullonacional))),                                            #2
+            sub_satisfaccionresidencial = sum(!is.na(c(aoj11, sd2new2, sd3new2,sd6new2,seguridadbarrio))),       #5
+            sub_confianzainterpersonal = sum(!is.na(c(it1))),                                                    #1
+            sub_comportamientoprosocial = sum(!is.na(c(cp8))),                                                   #1
+            sub_confianzainstitutciones = sum(!is.na(c(b21a, b21, b18, b10a, b13))),                             #5
+            sub_actitudhacialademocracia = sum(!is.na(c(pn4, b4, apoyodemocracia))),                             #3
+            sub_participacioncivica = sum(!is.na(c(prot3, hablarpolitica, convencerpolitica, firmadopeticion))), #4
+            sub_interespolitico = sum(!is.na(c(pol1, vb2))),                                                     #2
+            sub_justiciadistributiva = sum(!is.na(c(justiciaingresoriqueza,igualdadingresos))),                  #2
+            sub_surgirenlavida = sum(!is.na(c(dif_hijos,dif_padres)))                                            #2
+            )
+```
+
+```{r, results='asis'}
+table <- calidad_year_n %>%
+                  ungroup()%>%
+                  setNames(c("País","Ola",
+                   "Orgullo nacional","Satisfacción residencial",
+                   "Confianza interpersonal","Comportamiento prosocial",
+                   "Confianza en instituciones","Actitud hacia la democracia",
+                   "Participación cívica","Interés político",
+                   "Justicia distributiva","Surgir en la vida")) 
+```
+
+```{r Estimación subdimensiones y dimensiones}
+prom <- datos %>%
+  group_by(wave,pais)%>%
+  mutate(sub_orgullonacional = mean_na(mean_na(b4),
+                                       mean_na(orgullonacional)),
+         sub_satisfaccionresidencial = mean_na(mean_na(aoj11),
+                                               mean_na(sd2new2),
+                                               mean_na(sd3new2),
+                                               mean_na(sd6new2),
+                                               mean_na(seguridadbarrio)),
+         sub_confianzainterpersonal = it1,
+         sub_comportamientoprosocial = cp8,
+         
+         sub_confianzainstitutciones= mean_na(mean_na(b21a),
+                                              mean_na(b21),
+                                              mean_na(b18),
+                                              mean_na(b10a),
+                                              mean_na(b13)),
+         sub_actitudhacialademocracia = mean_na(mean_na(pn4),
+                                                mean_na(b4),
+                                                mean_na(apoyodemocracia)),
+         sub_participacioncivica = mean_na(mean_na(prot3),
+                                           mean_na(hablarpolitica),
+                                           mean_na(convencerpolitica),
+                                           mean_na(firmadopeticion)),
+         sub_interespolitico = mean_na(mean_na(pol1),
+                                       mean_na(vb2)),
+         sub_justiciadistributiva = mean_na(mean_na(justiciaingresoriqueza),
+                                            mean_na(igualdadingresos)),
+         sub_surgirenlavida = mean_na(mean_na(dif_hijos),
+                                      mean_na(dif_padres)))
+```
+
+```{r Crea base exclusivamente con subdimensiones}
+# datos_clean <- prom %>% select(starts_with("sub_"))
+# for(i in 1:nrow(datos)){
+# }
+```
+
+```{r Calidad subdimensiones general (total años)}
+calidad <- data.frame()
+
+# Se realiza una iteración por cada país en el dataset
+for(i in unique(prom$pais)){
+  
+  # Se comienza detectando qué indicadores corresponden a NAs y almacenando un booleano en el objeto part
+  part <- prom[prom$pais==i,1:31] %>% as.data.frame %>%
+    select(-c(pais,wave,riquezapersonal,riquezapadres,riquezahijos)) %>%
+    is.na()
+  # Se invierte para detectar casos válidos
+  part <- as.data.frame(!part)
+  # Se identifica la cantidad de años disponibles
+  n_years <- nrow(part)
+  # Se suma la cantidad de indicadores disponibles por cada subdimensión de país y se divide por el máximo teórico.
+  part <- data.frame(pais=i,
+                    sub_orgullonacional = round(sum(c(part$b4,part$orgullonacional))/(2*n_years)*100,1),
+                    sub_satisfaccionresidencial = round(sum(c(
+                      part$aoj11, part$sd2new2, part$sd3new2, part$sd6new2, part$seguridadbarrio
+                      ))/(5*n_years)*100,1),
+                    sub_confianzainterpersonal = round(sum(c(part$it1))/(1*n_years)*100,1),
+                    sub_comportamientoprosocial = round(sum(c(part$cp8))/(1*n_years)*100,1),
+                    
+                     sub_confianzainstitutciones = round(sum(c(
+                      part$b21a, part$b21, part$b18, part$b10a, part$b13
+                      ))/(5*n_years)*100,1),
+                    
+                    
+                    sub_actitudhacialademocracia = round(sum(c(
+                      part$pn4, part$b4, part$apoyodemocracia
+                      ))/(3*n_years)*100,1),
+                    
+                    sub_participacioncivica = round(sum(c(part$prot3,
+                                                                 part$hablarpolitica,
+                                                                 part$convencerpolitica,
+                                                                 part$firmadopeticion)
+                                                               )/(4*n_years)*100,1),
+                    
+                    sub_interespolitico = round(sum(c(part$pol1,
+                                                                 part$vb2)
+                                                               )/(2*n_years)*100,1),
+                    sub_justiciadistributiva = round(sum(c(part$justiciaingresoriqueza,
+                                                                 part$igualdadingresos)
+                                                               )/(2*n_years)*100,1),
+                    
+                    sub_surgirenlavida = round(sum(c(part$dif_hijos,
+                                                                 part$dif_padres)
+                                                               )/(2*n_years)*100,1))
+  calidad<- rbind(calidad,part)
+
+  
+}
+```
+
+```{r Calidad subdimensiones por año}
+
+# Hice este proceso por error dos veces de maneras distintas. Anteriormente se
+# crea el objeto calidad_year_n que contiene la cantidad de indicadores
+# disponibles por país y año. Aquí se crea calidad_year que indica si se debe
+# recodificar como NA al no cumplir con el umbral de disponibilidad.
+
+calidad_year <- prom %>%
+  as.data.frame %>%
+  select(-c(pais, wave, riquezapersonal, riquezapadres, riquezahijos)) %>%
+  mutate(across(everything(), ~ !is.na(.))) %>%
+  as.data.frame() %>%
+  mutate(
+    # Si se supera el mínimo de indicadores (2 en este caso)
+    # el valor de la subdimensión será FALSE (no es necesario intervenir)
+    # pero si es menor se recodificará TRUE para recodificarlo en un paso
+    # posterior como NA.
+    sub_orgullonacional          = ifelse(rowSums(cbind(b4,orgullonacional)) > 1, FALSE, TRUE),
+    sub_satisfaccionresidencial  = ifelse(rowSums(cbind(aoj11,sd2new2,sd3new2,sd6new2,seguridadbarrio)) > 2, FALSE, TRUE),
+    sub_confianzainterpersonal   = ifelse(rowSums(cbind(it1)) > 0, FALSE, TRUE),
+    sub_comportamientoprosocial  = ifelse(rowSums(cbind(cp8)) > 0, FALSE, TRUE),
+    sub_confianzainstitutciones  = ifelse(rowSums(cbind(b21a, b21, b18, b10a, b13)) > 2, FALSE, TRUE),
+    sub_actitudhacialademocracia = ifelse(rowSums(cbind(pn4, b4, apoyodemocracia)) > 1, FALSE, TRUE),
+    sub_participacioncivica      = ifelse(rowSums(cbind(prot3, hablarpolitica, convencerpolitica, firmadopeticion)) > 2, FALSE, TRUE),
+    sub_interespolitico          = ifelse(rowSums(cbind(pol1, vb2)) > 1, FALSE, TRUE),
+    sub_justiciadistributiva     = ifelse(rowSums(cbind(justiciaingresoriqueza, igualdadingresos)) > 1, FALSE, TRUE),
+    sub_surgirenlavida           = ifelse(rowSums(cbind(dif_hijos, dif_padres)) > 1, FALSE, TRUE)
+  ) %>%
+  select(starts_with("sub_")) %>%
+  mutate(
+    pais = prom$pais,
+    wave = prom$wave
+  ) %>%
+  select(pais,wave,everything())
+```
+
+```{r NA subs menor a 60}
+prom_bak <- prom
+
+for(i in 1:nrow(prom)){
+  # print(i)
+  for(x in names(calidad_year)[3:12]){
+    if(calidad_year[i,x]){
+      prom[i,x] <- NA
+    }
+  }
+}
+```
+
+```{r}
+prom <- prom %>%
+  group_by(wave,pais)%>%
+  mutate(dim_sentidopertenencia = mean_na(sub_orgullonacional),
+         dim_calidaddevidaenelvecindario = mean_na(sub_satisfaccionresidencial),
+         dim_redessociales = mean_na(sub_confianzainterpersonal,
+                                     sub_comportamientoprosocial),
+         dim_confianzainstitucionesdemocracia = mean_na(sub_confianzainstitutciones,
+                                                        sub_actitudhacialademocracia),
+         dim_participacionpolitica = mean_na(sub_participacioncivica,
+                                             sub_interespolitico),
+         dim_percepcionjusticia = mean_na(sub_justiciadistributiva,
+                                       sub_surgirenlavida)
+        )
+```
+
+
+```{r Calidad dimensiones por año}
+
+# Hice este proceso por error dos veces de maneras distintas. Anteriormente se
+# crea el objeto calidad_year_n que contiene la cantidad de indicadores
+# disponibles por país y año. Aquí se crea calidad_year que indica si se debe
+# recodificar como NA al no cumplir con el umbral de disponibilidad.
+
+calidad_year_dims <- prom %>%
+  as.data.frame %>%
+  select(-c(pais, wave, riquezapersonal, riquezapadres, riquezahijos)) %>%
+  mutate(across(everything(), ~ !is.na(.))) %>%
+  as.data.frame() %>%
+  mutate(
+    dim_sentidopertenencia                = ifelse(rowSums(cbind(sub_orgullonacional)) > 0, FALSE, TRUE),
+    dim_calidaddevidaenelvecindario       = ifelse(rowSums(cbind(sub_satisfaccionresidencial)) > 0, FALSE, TRUE),
+    dim_redessociales                     = ifelse(rowSums(cbind(sub_confianzainterpersonal, sub_comportamientoprosocial)) > 1, FALSE, TRUE),
+    dim_confianzainstitucionesdemocracia  = ifelse(rowSums(cbind(sub_confianzainstitutciones, sub_actitudhacialademocracia)) > 1, FALSE, TRUE),
+    dim_participacionpolitica             = ifelse(rowSums(cbind(sub_participacioncivica, sub_interespolitico)) > 1, FALSE, TRUE),
+    dim_percepcionjusticia                = ifelse(rowSums(cbind(sub_justiciadistributiva, sub_surgirenlavida)) > 1, FALSE, TRUE)
+  ) %>%
+  select(starts_with("dim")) %>%
+  mutate(
+    pais = prom$pais,
+    wave = prom$wave
+  ) %>%
+  select(pais,wave,everything())
+```
+
+```{r NA dims menor a 60}
+for(i in 1:nrow(prom)){
+  # print(i)
+  for(x in names(calidad_year_dims)[3:8]){
+    # print(x)
+    if(calidad_year_dims[i,x]){
+      prom[i,x] <- NA
+    }
+  }
+}
+```
+
+```{r Calidad cohesion por año}
+
+prom <- prom %>%
+  group_by(wave,pais)%>%
+  mutate(cohesion_horizontal = mean_na(dim_sentidopertenencia,
+                                       dim_calidaddevidaenelvecindario,
+                                       dim_redessociales),
+         cohesion_vertical = mean_na(dim_confianzainstitucionesdemocracia,
+                                     dim_participacionpolitica,
+                                     dim_percepcionjusticia)
+         )
+
+
+# Hice este proceso por error dos veces de maneras distintas. Anteriormente se
+# crea el objeto calidad_year_n que contiene la cantidad de indicadores
+# disponibles por país y año. Aquí se crea calidad_year que indica si se debe
+# recodificar como NA al no cumplir con el umbral de disponibilidad.
+
+calidad_year_cohesion <- prom %>%
+  as.data.frame %>%
+  select(-c(pais, wave, riquezapersonal, riquezapadres, riquezahijos)) %>%
+  mutate(across(everything(), ~ !is.na(.))) %>%
+  as.data.frame() %>%
+  mutate(
+    cohesion_horizontal = ifelse(rowSums(cbind(dim_sentidopertenencia, dim_calidaddevidaenelvecindario, dim_redessociales)) > 1, FALSE, TRUE),
+    cohesion_vertical = ifelse(rowSums(cbind(dim_confianzainstitucionesdemocracia, dim_participacionpolitica, dim_percepcionjusticia)) > 1, FALSE, TRUE)
+  ) %>%
+  select(starts_with("cohesion")) %>%
+  mutate(
+    pais = prom$pais,
+    wave = prom$wave
+  ) %>%
+  select(pais,wave,everything())
+```
+
+```{r NA cohesion menor a 60}
+for(i in 1:nrow(prom)){
+  # print(i)
+  for(x in names(calidad_year_cohesion)[3:4]){
+    if(calidad_year_cohesion[i,x]){
+      prom[i,x] <- NA
+    }
+  }
+}
+```
+
+```{r}
+
+prom$cohesion_general <- (prom$cohesion_horizontal+prom$cohesion_vertical)/2
+```
+
+
+```{r}
+  calidad[1:11] %>%
+  setNames(c("País","Orgullo nacional","Satisfacción residencial","Confianza interpersonal","Comportamiento prosocial","Confianza en instituciones","Actitud hacia la democracia","Participación cívica","Interés político","Justicia distributiva","Surgir en la vida")) %>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  align(align = "center", part = "all") %>%
+  colformat_num(columns = 2:11, suffix = "%") %>%
+  
+  bg(i = ~ `Orgullo nacional` < 75, j = 2, bg = "#F4D03F") %>%
+  color(i = ~ `Orgullo nacional` < 75, j = 2, color='#444444') %>%
+  bg(i = ~ `Satisfacción residencial` < 75, j = 3, bg = "#F4D03F") %>%
+  color(i = ~ `Satisfacción residencial` < 75, j = 3, color='#444444') %>%
+  bg(i = ~ `Confianza interpersonal` < 75, j = 4, bg = "#F4D03F") %>%
+  color(i = ~ `Confianza interpersonal` < 75, j = 4, color='#444444') %>%
+  bg(i = ~ `Comportamiento prosocial` < 75, j = 5, bg = "#F4D03F") %>%
+  color(i = ~ `Comportamiento prosocial` < 75, j = 5, color='#444444')%>%
+  bg(i = ~ `Confianza en instituciones` < 75, j = 6, bg = "#F4D03F") %>%
+  color(i = ~ `Confianza en instituciones` < 75, j = 6, color='#444444') %>%
+  bg(i = ~ `Actitud hacia la democracia` < 75, j = 7, bg = "#F4D03F") %>%
+  color(i = ~ `Actitud hacia la democracia` < 75, j = 7, color='#444444') %>%
+  bg(i = ~ `Participación cívica` < 75, j = 8, bg = "#F4D03F") %>%
+  color(i = ~ `Participación cívica` < 75, j = 8, color='#444444') %>%
+  bg(i = ~ `Interés político` < 75, j = 9, bg = "#F4D03F") %>%
+  color(i = ~ `Interés político` < 75, j = 9, color='#444444') %>%
+  bg(i = ~ `Justicia distributiva` < 75, j = 10, bg = "#F4D03F") %>%
+  color(i = ~ `Justicia distributiva` < 75, j = 10, color='#444444') %>%
+  bg(i = ~ `Surgir en la vida` < 75, j = 11, bg = "#F4D03F") %>%
+  color(i = ~ `Surgir en la vida` < 75, j = 11, color='#444444')%>%
+  
+  bg(i = ~ `Orgullo nacional` < 50, j = 2, bg = "#E73C6D") %>%
+  color(i = ~ `Orgullo nacional` < 50, j = 2, color='white') %>%
+  bg(i = ~ `Satisfacción residencial` < 50, j = 3, bg = "#E73C6D") %>%
+  color(i = ~ `Satisfacción residencial` < 50, j = 3, color='white') %>%
+  bg(i = ~ `Confianza interpersonal` < 50, j = 4, bg = "#E73C6D") %>%
+  color(i = ~ `Confianza interpersonal` < 50, j = 4, color='white') %>%
+  bg(i = ~ `Comportamiento prosocial` < 50, j = 5, bg = "#E73C6D") %>%
+  color(i = ~ `Comportamiento prosocial` < 50, j = 5, color='white',) %>%
+  bg(i = ~ `Confianza en instituciones` < 50, j = 6, bg = "#E73C6D") %>%
+  color(i = ~ `Confianza en instituciones` < 50, j = 6, color='white') %>%
+  bg(i = ~ `Actitud hacia la democracia` < 50, j = 7, bg = "#E73C6D") %>%
+  color(i = ~ `Actitud hacia la democracia` < 50, j = 7, color='white') %>%
+  bg(i = ~ `Participación cívica` < 50, j = 8, bg = "#E73C6D") %>%
+  color(i = ~ `Participación cívica` < 50, j = 8, color='white') %>%
+  bg(i = ~ `Interés político` < 50, j = 9, bg = "#E73C6D") %>%
+  color(i = ~ `Interés político` < 50, j = 9, color='white') %>%
+  bg(i = ~ `Justicia distributiva` < 50, j = 10, bg = "#E73C6D") %>%
+  color(i = ~ `Justicia distributiva` < 50, j = 10, color='white') %>%
+  bg(i = ~ `Surgir en la vida` < 50, j = 11, bg = "#E73C6D") %>%
+  color(i = ~ `Surgir en la vida` < 50, j = 11, color='white')
+
+
+```
+
+\newline
+
+<div style="height: 65px;"></div>
+
+:::: {.columns}
+
+<p> En el siguiente diagrama se ejemplifica cómo se construye el porcentaje para un país. Asumiendo que el total de años estudiados fuera 2, y que la "Subdimensión X" se compone de 2 indicadores (en total 4 a lo largo del periodo). La presencia de sólo 3 de ellos implicaría una calidad del 75% pues = $3/4$. </p>
+
+::: {.column width="20%"}
+
+:::
+
+::: {.column width="60%"}
+
+
+
+```{mermaid Mermaid 75,eval=FALSE}
+graph LR
+    A[Indicador A - 2020 Válido] --> C[Subdimensión X - País Y]
+    B[Indicador B - 2020 Válido] --> C
+    D[Indicador A - 2021 Nulo] --> C
+    E[Indicador B - 2021 Válido] --> C
+    C --> F[Calidad 75%]
+```
+
+:::
+
+::: {.column width="20%"}
+
+:::
+
+::::
+
+### Detalle disponibilidad indicadores.
+
+En la tabla, los valores representan la cantidad de
+indicadores disponibles. Es relevante tomar en consideración
+los valores máximos pues corresponden al total de indicadores con que se construye una subdimensión. Ej. Para `Satisfacción residencial ` el 10% de
+los casos (país-ola) tienen sólo un indicador para la
+construcción de la subdimensión, mientras que el 38,5% restante de los
+casos tienen la frecuencia máxima de indicadores, es decir, el total posible (5 para esta subdimensión).
+
+```{r, results='asis'}
+# Visualización tabla con indicadores disponibles.
+print(dfSummary(table %>% select(- País, - Ola),
+                headings = FALSE,
+                method = 'render',
+                style = "grid",
+                plain.ascii = FALSE,
+                tmp.img.dir = 'tmp',
+                silent= TRUE,  split.by = NULL,
+                na.col = FALSE,
+                valid.col = FALSE,
+                # style = "multiline",
+                varnumbers = FALSE),
+max.tbl.height = 500,
+method = 'render',
+silent = TRUE,
+footnote = NA)
+rm(table)
+```
+
+# Índices
+
+## Subdimensiones
+
+
+
+
+A partir del análisis sobre disponibilidad de datos para la
+estimación, se define un umbral del 60%
+de los datos disponibles para considerarse válido. Las
+subdimensiones resultantes (país-ola) con una proporción
+menor son recodificados como casos perdidos (NAs).
+
+<style>
+
+.columns {
+text-align: center;
+}
+
+.column{
+text-align: justify!important;
+}
+
+.cluster rect {
+    fill: #ffffff00!important;
+}
+
+svg {
+max-width: 100%!important;
+}
+
+</style>
+
+:::: {.columns}
+
+::: {.column width="50%"}
+
+```{mermaid, fig.align = 'center',eval=FALSE}
+%%| fig-responsive: false
+%%{init: {'theme': 'default' } }%%
+
+flowchart TD
+  K[Año 2010] <--> L
+  L[Subdimensión B] -->|Integrada por | M(Indicador D)
+  L -->|Integrada por | N(Indicador E)
+  M --> P[Disponible]
+  N --> O[No disponible]
+  O --> Q[Disponibilidad de datos: 50% para 2010]
+  P --> Q
+  Q --> R[Dato no válido]
+```
+
+:::
+
+::: {.column width="50%"}
+
+```{mermaid, fig.align = 'center',eval=FALSE}
+%%| fig-responsive: false
+%%{init: {'theme': 'default' } }%%
+
+flowchart TD
+  E[Año 2010] <--> A
+  A[Subdimensión A] -->|Integrada por | B(Indicador B)
+  A -->|Integrada por | C(Indicador C)
+  A -->|Integrada por | D(Indicador D)
+  B --> F[Disponible]
+  C --> G[Disponible]
+  D --> H[No disponible]
+  F --> I[Disponibilidad de datos: 66,6% para 2010]
+  G --> I
+  H --> I
+  I --> J[Dato válido]
+```
+
+:::
+::::
+
+## Dimensiones
+
+:::: {.columns}
+
+::: {.column width="30%"}
+
+Al igual que las subdimensiones, los valores para las dimensiones son estimadas con medias simples, aplicando los mismo umbral mínimo de disponibilidad de datos que para las subdimensiones (al menos 60%). El proceso se replica para la estimación de las medias de cohesión `horizontal` y `vertical`. En los diagramas a la derecha se presenta la forma en que se construyen los valores. Los resultados son presentados en el dashboard inserto al [inicio del documento](#title-block-header). Además, es posible consultar el detalle en la sección de [anexo](#tabla-de-valores).
+:::
+
+::: {.column width="5%"}
+
+:::
+
+::: {.column width="32%"}
+```{mermaid, fig.align = 'center',eval=FALSE}
+%%| fig-responsive: false
+%%| fig-height: 4
+
+graph BT
+    A[Subdimensión A] --> C[Promedio simple]
+    B[Subdimensión B] --> C[Promedio simple]
+    C --> D[Filtro de disponibilidad del 60%]
+    D --> E[Dimensión C]
+```
+:::
+
+::: {.column width="32%"}
+
+```{mermaid, fig.align = 'center',eval=FALSE}
+%%| fig-responsive: false
+%%| fig-height: 4
+
+graph BT
+    A[Dimensión X] --> C[Promedio simple]
+    B[Dimensión Y] --> C[Promedio simple]
+    C --> D[Filtro de disponibilidad del 60%]
+    D --> E["Cohesión (vert./horiz.)"]
+```
+
+
+
+:::
+
+::::
+
+# Anexo
+
+::: panel-tabset
+
+## Cohesión vertical, horizontal y general
+
+```{r Visualizacion vertical}
+plot<-ggplot(prom, aes(x = wave, y = cohesion_vertical, color=pais,group=pais)) +
+  geom_point() +
+  geom_line() +
+  # geom_smooth(method = "lm", se = TRUE)+
+  theme_minimal()+
+  ggtitle(paste0('Cohesión vertical por país'))+
+  labs(
+    x = "Ola",
+    y = "Puntaje (0-10)",
+    #color = "Tasa homofilia",
+    subtitle = "Datos por país.",
+    caption = paste("Datos LAPOP."))+
+  theme(legend.position='bottom',
+        #text=element_text(family=font_ggplot),
+        plot.title = element_text(face="bold"),
+        legend.title = element_text(
+                                    #size=size_title_legend,
+                                    face = "bold"
+        ), 
+        #legend.text = element_text(size=size_text_legend),
+        #legend.key.width = unit(size_key_legend, 'cm'),
+  )
+ggplotly(plot)
+```
+
+```{r Visualizacion hotizontal}
+plot<-ggplot(prom, aes(x = wave, y = cohesion_horizontal, color=pais,group = pais)) +
+  geom_point() +
+  geom_line() +
+  # geom_smooth(method = "lm", se = TRUE)+
+  theme_minimal()+
+  ggtitle(paste0('Cohesión horizontal por país'))+
+  labs(
+    x = "Ola",
+    y = "Puntaje (0-10)",
+    #color = "Tasa homofilia",
+    subtitle = "Datos por país.",
+    caption = paste("Datos LAPOP."))+
+  theme(legend.position='bottom',
+        #text=element_text(family=font_ggplot),
+        plot.title = element_text(face="bold"),
+        legend.title = element_text(
+                                    #size=size_title_legend,
+                                    face = "bold"
+        ), 
+        #legend.text = element_text(size=size_text_legend),
+        #legend.key.width = unit(size_key_legend, 'cm'),
+  )
+ggplotly(plot)
+```
+
+```{r Visualizacion general}
+plot<-ggplot(prom, aes(x = wave, y = cohesion_general, color=pais,group=pais)) +
+  geom_point() +
+  geom_line() +
+  # geom_smooth(method = "lm", se = TRUE)+
+  theme_minimal()+
+  ggtitle(paste0('Cohesión general por país'))+
+  labs(
+    x = "Ola",
+    y = "Puntaje (0-10)",
+    #color = "Tasa homofilia",
+    subtitle = "Datos por país.",
+    caption = paste("Datos LAPOP."))+
+  theme(legend.position='bottom',
+        #text=element_text(family=font_ggplot),
+        plot.title = element_text(face="bold"),
+        legend.title = element_text(
+                                    #size=size_title_legend,
+                                    face = "bold"
+        ), 
+        #legend.text = element_text(size=size_text_legend),
+        #legend.key.width = unit(size_key_legend, 'cm'),
+  )
+ggplotly(plot)
+```
+
+## Detalle de valores por año y país
+
+### Tabla de valores
+
+```{r,out.height='750px'}
+prom[,c(1:2,32:50)] %>%
+  mutate_if(is.numeric, round, digits = 2)%>%
+  flextable() %>%
+    theme_alafoli()%>%
+   autofit()
+```
+
+
+<!-- ## Revisión disponibilidad LAPOP -->
+
+```{r Crea review, eval=FALSE}
+# Habiendo identidicado las variables de interés se revisa su disponibilidad por
+# año según el porcentaje de países que contienen datos para cada una.
+
+# review <- data.frame()
+# for( i in colnames(LAPOP)){
+#   tabla_frecuencia <- LAPOP %>%
+#   count(pais,wave, is.na(!!sym(i))) %>%
+#     setNames(c("pais","wave","is_na","n"))%>%
+#   complete(pais, wave, is_na, fill = list(n = 0)) %>%
+#   group_by(pais,wave) %>% mutate(percent= n/sum(n), var=as.character(i),
+#                                  label = as.character(get_label(LAPOP)[i]))
+#   tabla_frecuencia$percent[is.na(tabla_frecuencia$percent)]<-0
+#   tabla_frecuencia <- tabla_frecuencia[tabla_frecuencia[, 3] == FALSE,
+#                                        c(1,2,4,5,6,7)]
+#   tabla_frecuencia$pais <- as_label(tabla_frecuencia$pais)
+#   var <- as.character(get_label(LAPOP)[i])
+#   review<-rbind(review,tabla_frecuencia)
+# }
+# 
+# review_summary <- review %>% group_by(label,wave) %>%
+#   summarise(presencia = sum(percent>0)/25,
+#             n_valid = sum(percent>0))
+# 
+# write_rds(review,"data/review_lapop.RDS")
+# write_rds(review_summary,"data/review_summary_lapop.RDS")
+```
+
+```{r LAPOP: Disponibilidad de indicadores por año}
+# review <- readRDS("data/review_lapop.rds") #País-Ola-Variable-Valido?
+# review_summary <- readRDS("data/review_summary_lapop.rds") # Variable-Ola-Percent-Freq
+# 
+# # Según indicador
+# plot <- ggplot(review_summary,
+#                aes(x = wave, y = presencia, color=label,group=label)) +
+#         geom_point() +
+#         geom_line() +
+#         theme_minimal() +
+#         ggtitle(paste0(
+#           'Proporción paises con dato para: ')) +
+#         labs(
+#           x = "Ola",
+#           y = "Frecuencia relativa",
+#           subtitle = "Frecuencia relativa de casos",
+#           caption = paste("Datos LAPOP."))+
+#         theme(legend.position = 'bottom',
+#               plot.title = element_text(face="bold"),
+#               legend.title = element_text(face = "bold")) +
+#         coord_cartesian(ylim = c(0, NA)) 
+# 
+# ggplotly(plot)
+# rm("plot", "review_summary")
+```
+
+```{r Proporción de variables disponibles por país y ola, message=FALSE}
+# review <- readRDS("data/review_lapop.rds") #País-Ola-Variable-Valido?
+# review <- review %>% group_by(pais,wave) %>%
+#   filter(!var %in% c('wave',"pais","year"))%>%
+#   filter(!pais %in% c("Suriname","Bahamas","Barbados","Grenada","Saint Lucia","Dominica","Saint Vincent and the Grenadines","Saint Kitts and Nevis"))%>%
+#   filter(wave != 2021)%>%
+#   summarise(presencia = sum(percent>0)/25,
+#             n_valid = sum(percent>0))
+# 
+# plot<-ggplot(review, aes(x = wave, y = presencia, color=pais,group=pais)) +
+#   geom_point() +
+#   geom_line() +
+#   theme_minimal()+
+#   ggtitle(paste0('Proporción de variables disponibles por país y ola'))+
+#   labs(
+#     x = "Ola",
+#     y = "Frecuencia relativa",
+#     subtitle = "Frecuencia relativa de casos",
+#     caption = paste("Datos LAPOP."))+
+#   theme(legend.position='bottom',
+#         plot.title = element_text(face="bold"),
+#         legend.title = element_text(face = "bold"),
+#   ) + coord_cartesian(ylim = c(0, NA))
+# ggplotly(plot)
+# rm(plot,review)
+```
+
+## Correlación resultados
+
+### Correlación entre subdimensiones
+
+```{r Correlación subdimensiones, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(prom %>%
+                    ungroup() %>%
+                    select(sub_orgullonacional,
+                                  sub_satisfaccionresidencial,
+                                  sub_confianzainterpersonal,
+                                  sub_comportamientoprosocial,
+                                  sub_confianzainstitutciones,
+                                  sub_actitudhacialademocracia,
+                                  sub_participacioncivica,
+                                  sub_interespolitico,
+                                  sub_justiciadistributiva,
+                                  sub_surgirenlavida) %>%
+                    setNames(c("Orgullo nacional", "Satisfacción residencial","Confianza interpersonal",
+                               "Comportamiento prosocial", "Confianza en instituciones", "Actitud hacia democracia",
+                               "Participación cívica","Interés político", "Justicia distributiva", "Surgir en la vida")))
+```
+
+### Correlación entre dimensiones
+
+```{r Correlación Dimensiones, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(prom %>%
+                    ungroup() %>%
+                    select(dim_sentidopertenencia,
+                           dim_calidaddevidaenelvecindario,
+                           dim_redessociales,
+                           dim_confianzainstitucionesdemocracia,
+                           dim_participacionpolitica,
+                           dim_percepcionjusticia) %>%
+                    setNames(c("Sentido de pertenencia", "Calidad de vida en el vecindario",
+                               "Redes sociales", "Confianza instituciones y democracia",
+                               "Participación política", "Percepción justicia")))
+```
+
+### Correlación entre tipos de cohesión
+
+```{r Correlación cohesiones, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(prom %>%
+                    ungroup() %>%
+                    select(cohesion_horizontal,
+                           cohesion_vertical) %>%
+                    setNames(c("Cohesión horizontal", "Cohesión vertical")))
+```
+
+:::
+
+```{css, echo=FALSE,eval=FALSE}
+.table {
+    --bs-table-striped-bg: rgba(0, 0, 0, 0);
+}
+```
+
+```{r,eval=FALSE}
+#Archivos a producir
+rm(list = setdiff(ls(),c("prom")))
+
+load(file = "data/country_vars.rdata")
+
+country_vars <- country_vars %>%
+  rename("wave" = "date")
+
+df <- merge(prom,
+              country_vars,
+              by = c("pais","wave"),
+              all.x = TRUE) %>%
+  select(-id,-country)
+  
+
+
+# prom_wave_wvs <- prom_wave_wvs %>%
+#   mutate(pais = droplevels(pais)) %>%
+#   as_tibble()%>%
+#   complete(wave,pais)
+df <- df %>%
+  select(Ola = wave,
+         País = pais,
+         'Orgullo nacional' = sub_orgullonacional,
+         'Satisfacción residencial' = sub_satisfaccionresidencial,
+         'Confianza interpersonal' = sub_confianzainterpersonal,
+         'Comportamiento prosocial' = sub_comportamientoprosocial,
+         "Confianza en instituciones" = sub_confianzainstitutciones,
+         "Actitud hacia la democracia" = sub_actitudhacialademocracia,
+         "Participación cívica" = sub_participacioncivica,
+         "Interés político" = sub_interespolitico,
+         "Justicia distributiva" = sub_justiciadistributiva,
+         "Surgir en la vida" = sub_surgirenlavida,
+         "Cohesión horizontal" = cohesion_horizontal,
+         "Cohesión vertical" = cohesion_vertical,
+         "Coef. Gini" = gini,
+         "PIB per capita (miles)" = gdp
+         ) %>% 
+  pivot_longer(cols = 3:16,names_to = "Variable",values_to = "Valor", values_drop_na = FALSE)
+
+df <- df %>% rbind(df %>%
+    group_by(Ola, Variable) %>%
+    summarise(Valor = mean(Valor, na.rm = TRUE)) %>%
+    mutate(País = "Promedio") %>%
+    ungroup() %>%
+    select(Ola, País, Variable, Valor))
+
+# save(df,file = "data/base_shiny.rdata")
+# load(file = "data/base_shiny.rdata")
+# Ola, País, Variable, Valor (incluye NA) # 2000 filas.
+
+
+load(file = "data/world_data.rdata")
+
+df <- merge(prom,
+              country_vars,
+              by = c("pais","wave"),
+              all.x = TRUE) %>%
+  select(-id)
+
+df <- df %>%
+  select(iso3 = country,
+         Ola = wave,
+         País = pais,
+         'Orgullo nacional' = sub_orgullonacional,
+         'Satisfacción residencial' = sub_satisfaccionresidencial,
+         'Confianza interpersonal' = sub_confianzainterpersonal,
+         'Comportamiento prosocial' = sub_comportamientoprosocial,
+         "Confianza en instituciones" = sub_confianzainstitutciones,
+         "Actitud hacia la democracia" = sub_actitudhacialademocracia,
+         "Participación cívica" = sub_participacioncivica,
+         "Interés político" = sub_interespolitico,
+         "Justicia distributiva" = sub_justiciadistributiva,
+         "Surgir en la vida" = sub_surgirenlavida,
+         "Cohesión horizontal" = cohesion_horizontal,
+         "Cohesión vertical" = cohesion_vertical
+         # "Coef. Gini" = gini,
+         # "PIB per capita (miles)" = gdp
+         ) 
+
+world <- world_data %>% select(iso3,geometry)
+world <- world[!duplicated(world),]
+
+world_data <- merge(world,df, by = c("iso3"), all.y = TRUE)
+save(world_data, file = "data/world_data.rdata")
+```
+

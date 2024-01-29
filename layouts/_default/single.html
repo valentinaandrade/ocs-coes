@@ -65,6 +65,12 @@
             <!-- /.container -->
         </div>
         <!-- /#content -->
+        {{ if .Page.Store.Get "hasMermaid" }}
+          <script type="module">
+            import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.esm.min.mjs';
+            mermaid.initialize({ startOnLoad: true });
+          </script>
+          {{ end }}
 
         {{ partial "footer.html" . }}
 

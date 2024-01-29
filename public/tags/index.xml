@@ -6,33 +6,28 @@
     <description>Recent content in Tags on Observatorio de Cohesión Social</description>
     <generator>Hugo -- gohugo.io</generator>
     <language>es-cl</language>
-    <lastBuildDate>Thu, 30 Sep 2021 13:50:46 +0200</lastBuildDate><atom:link href="https://ocs-coes.netlify.app/tags/index.xml" rel="self" type="application/rss+xml" />
+    <lastBuildDate>Thu, 30 Sep 2021 13:50:46 +0200</lastBuildDate>
+    <atom:link href="https://ocs-coes.netlify.app/tags/index.xml" rel="self" type="application/rss+xml" />
     <item>
       <title>cohesion social</title>
       <link>https://ocs-coes.netlify.app/tags/cohesion-social/</link>
       <pubDate>Thu, 30 Sep 2021 13:50:46 +0200</pubDate>
-      
       <guid>https://ocs-coes.netlify.app/tags/cohesion-social/</guid>
       <description></description>
     </item>
-    
     <item>
       <title>lanzamiento</title>
       <link>https://ocs-coes.netlify.app/tags/lanzamiento/</link>
       <pubDate>Thu, 30 Sep 2021 13:50:46 +0200</pubDate>
-      
       <guid>https://ocs-coes.netlify.app/tags/lanzamiento/</guid>
       <description></description>
     </item>
-    
     <item>
       <title>visualizador</title>
       <link>https://ocs-coes.netlify.app/tags/visualizador/</link>
       <pubDate>Thu, 30 Sep 2021 13:50:46 +0200</pubDate>
-      
       <guid>https://ocs-coes.netlify.app/tags/visualizador/</guid>
       <description></description>
     </item>
-    
   </channel>
 </rss>

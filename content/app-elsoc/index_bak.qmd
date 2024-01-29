@@ -1,0 +1,737 @@
+---
+# description: Indicadores Cohesión Social ELSOC
+keywords:
+- shiny
+- indicadores
+- lapop
+- latinoamerica
+# title: Cohesión Social en Chile
+format:
+  html:
+    embed-resources: true
+    page-layout: full
+    toc: false
+    toc-depth: 3
+    number-sections: true
+    number-depth: 2
+    theme: cosmo
+knitr:
+  opts_knit:
+    verbose: true
+lang: es
+title-block-banner: false
+execute:
+  echo: false
+fig-cap-location: bottom
+---
+
+<style>
+#quarto-document-content > div > div {
+display: none!important
+}
+</style>
+
+<div class="flourish-embed flourish-chart" data-src="visualisation/16243987" data-height="13%"><script src="https://public.flourish.studio/resources/embed.js"></script></div>
+
+Este documento tiene por intención constituir un aporte en el análisis de cohesión social en Chile. Para esto, se utilizan datos del periodo 2016-2022 provenientes del [Estudio Longitudinal Social de Chile (ELSOC)](https://coes.cl/encuesta-panel/). La estrategia de operacionalización está basada en el documento [“Hacia una propuesta de medición de Cohesión Social con ELSOC - Estudio Longitudinal Social de Chile / COESA”](https://ocscoes.github.io/cohesion-elsoc/index.html). A continuación se describen los datos y su procesamiento.
+
+
+```{r Librerías, message=FALSE}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse,sjlabelled,countrycode,haven,questionr,wbstats,zoo,
+               sjPlot,sjmisc,dplyr,summarytools,flextable,data.table,scales,
+               purrr, plotly, PerformanceAnalytics)
+st_options(lang='es')
+options(OutDec=",")
+```
+
+```{r Carga de datos}
+load("data/ELSOC_Long.RData")
+elsoc <- elsoc_long_2016_2022 ; #rm(elsoc_long_2016_2022)
+#frq(elsoc$ola)
+
+elsoc$ola<-to_label(elsoc$ola)
+elsoc <- elsoc %>% select(ola,fact_exp01,fact_exp02,
+
+# Confianza en instituciones y satisfacción con la democracia.
+c05_01, # Grado de confianza en el gobierno
+c05_02, # Grado de confianza en los partidos políticos
+c05_03, # Grado de confianza en Carabineros
+c05_04, # Grado de confianza en los sindicatos
+c05_05, # Grado de confianza en el Poder Judicial
+c05_06, # Grado de confianza en las empresas privadas
+c05_07, # Grado de confianza en el congreso nacional
+c05_08, # Grado de confianza en el Presidente de la república
+c01, # Satisfacción con la democracia
+
+# Participación política.
+c08_01, # Frecuencia con que se ha firmado una carta o petición apoyando una causa
+c08_02, # Frecuencia con que se ha asistido a marcha o manifestación paciífica
+c08_03, # Frecuencia con que se ha participado en huelgas
+c08_04, # Frecuencia con que se ha usado redes sociales para opinar en temas públicos
+c13, # Interés en política
+c14_01, # Frecuencia con que se habla de política con familiares o amigos
+c14_02, # Frecuencia con que se informa sobre política en medios de comunicación
+
+# Percepción de justicia.
+# 1- Totalmente en desacuerdo // 5 - Totalmente de acuerdo
+c18_09, # Grado de acuerdo: Las personas son recompensadas por sus esfuerzos
+c18_10, # Grado de acuerdo: Las personas son recompensadas por su inteligencia
+# 1- Nada de importante // 5 - Muy importante
+d05_01, # Grado de importancia: Provenir de una familia adinerada.
+d05_02, # Grado de importancia: tener un buen nivel de educación.
+d05_03, # Grado de importancia: Tener ambición.
+d05_04, # Grado de importancia: El trabajo duro.
+
+# Sentido de pertenencia.
+c32_02, # Grado de acuerdo: Me identifico con Chile
+c32_01, # Grado de acuerdo: Me siento orgulloso de ser chileno.
+
+#Calidad de la vida en el vecindario.
+t01, # Cuento confía usted en sus vecinos.
+t02_01, # Grado de acuerdo: Este es el barrio ideal para mí.
+t02_02, # Grado de acuerdo: Me siento integrado en este barrio.
+t02_03, # Grado de acuerdo: Me identifico con la gente de este barrio.
+t02_04, # Grado de acuerdo: Este barrio es parte de mí.
+t03_01, # Grado de acuerdo: en este barrio es fácil hacer amigos.
+t03_02, # Grado de acuerdo: en este barrio la gente es sociable.
+t03_03, # Grado de acuerdo: en este barrio la gente es cordial.
+t03_04, # Grado de acuerdo: en este barrio la gente es colaboradora.
+# 1- Totalmente insatisfecho // 5- Totalmente satisfecho
+t06_01, # Grado de satisfacción: Seguridad del barrio.
+t06_02, # Grado de satisfacción: Conectividad.
+t06_03, # Grado de satisfacción: Áreas verdes y de recreación disponibles.
+t06_04, # Grado de satisfacción: Limpieza y belleza del barrio.
+t06_05, # Grado de satisfacción: Proximidad al lugar de actividad principal.
+t06_06, # Grado de satisfacción: Proximidad a colegios de buena calidad.
+t06_07, # Grado de satisfacción: Proximidad a áreas de comercio.
+t06_08, # Grado de satisfacción: Proximidad con familiares y/o amigos cercanos.
+t07_01, # Grado de satisfacción: Tamaño de la vivienda.
+t07_02, # Grado de satisfacción: Calidad de la vivienda.
+
+# Redes sociales.
+# 1- Casi siempre se puede confiar // 2- Casi siempre hay que tener cuidado en confiar
+c02, # Confianza Social Generalizada.
+c03, # Altruismo Social Generalizado 
+# 1- Mayoría trataría de aprovecharse // 2- Mayoría trataría de ser justa // 3 depende
+c04, # Mayoría de la gente trata de ser justa.
+# 1- Nunca // 3- Muchas veces
+c07_01, # Frecuencia: Visito la casa de vecino.
+c07_02, # Frecuencia: Asisto a reunión sobre temas de interés público/comunitario.
+c07_03, # Frecuencia: Amigos visitaron su casa.
+c07_04, # Frecuencia: Hizo un voluntariado.
+c07_05, # Frecuencia: Donó dinero a caridad.
+c07_06, # Frecuencia: Prestó 10.000 o mas.
+c07_07, # Frecuencia: Converso con persona en problemas o deprimida.
+c07_08)  # Frecuencia: Ayudo a alguien a conseguir trabajo.
+
+# Dar vuelta----
+# d05_01
+# Alterar orden----
+# c02,c03,c04
+
+#names(elsoc)
+#labels(elsoc)
+elsoc_bak <- elsoc
+```
+
+```{r Formato datos,warning=FALSE,message=FALSE}
+
+# Calculamos la media ponderada
+#frq(elsoc)
+
+cols_numericas <- sapply(elsoc, is.numeric)
+
+# Reemplazamos los valores negativos por NA
+elsoc[, cols_numericas] <- lapply(elsoc[, cols_numericas], function(x) ifelse(x < 0, NA, x))
+
+
+elsoc<-elsoc %>% mutate(d05_01 = 6-d05_01
+)
+
+#summary(elsoc$c02)
+
+elsoc <- elsoc %>%
+  mutate_at(vars(c02, c03), ~recode(., "1" = 3, "2" = 1, "3" = 2))
+
+elsoc <- elsoc %>%
+  mutate_at(vars(c04), ~recode(., "1" = 1, "2" = 3, "3" = 2))
+# 1 = Most people would try to take advantage
+# 2 = Most people would try to be fair
+# 3 = It depends (do not read)
+
+# Se excluye de la transformación la variable "ola" y "fact_exp01"
+columnas_para_reescalar <- setdiff(names(elsoc), c("ola","fact_exp01"))
+
+# Se reescalan las columnas numéricas al rango [0, 10], excepto "ola" y "fact_exp01"
+elsoc <- elsoc %>%
+  mutate_at(vars(columnas_para_reescalar), ~rescale(., to = c(0, 10)))
+
+elsoc <- sjlabelled::copy_labels(elsoc,elsoc_bak)
+```
+
+# ELSOC
+
+La Encuesta Longitudinal Social de Chile (ELSOC) es un estudio significativo tanto en Chile como en América Latina. Realizada anualmente, la encuesta se enfoca en una muestra representativa de la población urbana chilena a lo largo de una década. El propósito principal de ELSOC es evaluar cómo los chilenos piensan, sienten y se comportan respecto a una variedad de temas relacionados con el conflicto y la cohesión social en el país.
+
+ELSOC se desarrolla bajo la dirección del [Centro de Estudios de Conflicto y Cohesión Social (COES)](https://coes.cl), con el apoyo de importantes instituciones académicas chilenas como la [Universidad de Chile](https://uchile.cl), la [Pontificia Universidad Católica de Chile](https://www.uc.cl), la [Universidad Diego Portales](https://www.udp.cl) y la [Universidad Adolfo Ibáñez](https://www.uai.cl). Desde 2013, ha recibido financiamiento del Fondo de Financiamiento de Centros de Investigación en Áreas Prioritarias (FONDAP) de la Comisión Nacional de Investigación Científica y Tecnológica (CONICYT), que es un organismo dependiente del Ministerio de Educación de Chile. Los datos de ELSOC se recogen a través de procesos de licitación pública cada dos años, siendo el Centro MicroDatos de la Universidad de Chile (CMD) el organismo ejecutor de la recopilación de datos.
+
+La encuesta utiliza un diseño cuantitativo con un cuestionario estructurado que incluye tanto preguntas cerradas de carácter simple y múltiple como algunas preguntas abiertas. Su unidad de análisis son individuos, específicamente hombres y mujeres de 18 a 75 años, residentes habituales de viviendas particulares en zonas urbanas. La muestra es representativa de aproximadamente el 77% de la población total del país y el 93% de la población urbana, con una duración promedio de la encuesta de 51 minutos.
+
+<style>
+
+#mermaid-1 {
+max-width: 1300px!important;
+}
+
+#mermaid-2 {
+max-width: 1300px!important;
+}
+
+#elsoc > div > div > div > p {
+text-align: center;
+}
+
+</style>
+
+```{mermaid Años ELSOC, fig.align = 'center',eval=FALSE}
+%%| fig-align: "center"
+%%| fig-responsive: true
+%%| fig-cap: "Olas ELSOC"
+
+
+graph LR
+  A[2016] --> B[2017] --> C[2018] --> D[2019] -->E[2021] --> F[2022]
+```
+
+Los temas abordados por ELSOC se dividen en varios módulos, incluyendo Ciudadanía y Democracia, Redes Sociales e Interacciones Intergrupales, Legitimidad y Desigualdad Social, Conflicto Social, Territorio, Salud y Bienestar, Género, y Caracterización Sociodemográfica. Cada uno de estos módulos profundiza en aspectos específicos de la sociedad chilena, como actitudes hacia la democracia, confianza institucional, percepciones de desigualdad y justificación de la violencia, entre otros.
+
+Para representar la información proporcionada sobre el Estudio Longitudinal Social de Chile (ELSOC) y los datos sociodemográficos de sus participantes, se puede crear una tabla que resuma estos aspectos clave. La tabla podría estructurarse de la siguiente manera:
+
+<style>
+#elsoc > div.columns > div:nth-child(1) {
+  margin-top: 4%;
+}
+</style>
+:::: {.columns}
+
+::: {.column width="55%"}
+
+| **Atributo**       | **Descripción**                                          |
+|--------------------|----------------------------------------------------------|
+|**Diseño muestral** | Probabilístico, estratificado, por conglomerados y multietápico.|
+| **Participantes**      | 4.500 participantes urbanos chilenos. De ellos,  1.303 presentes en las 6 olas y, desde la muestra refresco, 770 entrevistados adicionales que participaron en las últimas 4 sin excepción.|
+| **Período**        | 6 Olas en el periodo 2016 - 2022.                        |
+
+:::
+::: {.column width="5%"}
+:::
+::: {.column width="40%"}
+![Fuente: [Radiografía del Cambio Social en Chile 2016-2022 - Estudio Longitudinal Social de Chile.](https://radiografia-cambio-social-2016-2022.netlify.app/presentación-del-estudio.html#sobre-elsoc)](data/muestra.png){text-align="center"}
+:::
+::::
+
+<style>
+#datos > div.columns > div:nth-child(1) > div > div > div > div {
+margin-top: -47px;
+}
+</style>
+
+# Datos
+
+Los datos originales poseen diferentes escalas. Para el análisis se realizan dos transformaciones a los datos, primero se ordena a modo que los valores más altos de las escalas representen situaciones de mayor cohesión social y los más bajos de menor cohesión social. Luego, todas las variables son transformadas a una escala con límite inferior 0 y límite superior 10. A continuación se visualizan ejemplos de ambos procesos,el reordenamiento inicial y el reescalado final.
+
+:::: {.columns}
+
+::: {.column width="47%"}
+
+<h4 class="unnumbered anchored" data-anchor-id="ejemplo-reordenamiento-escala" style="text-align: center;">Ejemplo reordenamiento escala</h4>
+
+```{mermaid, eval = FALSE}
+graph TB
+A["Pregunta: ¿Cree que la mayoría de la gente intentaría<br>aprovecharse de usted si tuviera la oportunidad, o cree que<br>trataría de ser justa?"] --> B[Escala Original]
+B --> C[1 = La mayoria de la gente<br>intentaria aprovecharse]
+B --> D[2 = La mayoria de la gente<br>trataria de ser justa]
+B --> E["3 = Depende"] 
+C --> F[Nueva escala]
+D --> F
+E --> F
+F --> G[1 = La mayoria de la gente<br>intentaria aprovecharse]
+F --> H["2 = Depende"]
+F --> I[3 = La mayoria de la gente<br>trataria de ser justa]
+```
+:::
+::: {.column width="6%"}
+:::
+::: {.column width="47%"}
+
+<h4 class="unnumbered anchored" data-anchor-id="ejemplo-de-reescalado" style="text-align: center;">Ejemplo de reescalado</h4>
+
+```{mermaid, eval=FALSE}
+graph LR
+  A["Valor A: 2<br>(escala 1 a 5)"] -->H[Reescalado 0 a 10]--> E["Valor A: 2,5"]
+  C["Valor B: 0<br>(escala 0 a 1)"] -->I[Reescalado 0 a 10]--> F["Valor B: 0"]
+  D["Valor C: 3<br>(escala 1 a 7)"] -->J[Reescalado 0 a 10]--> G["Valor C: 3,33…"]
+  K["Valor D: 8<br>(escala 0 a 10)"] -->L[Reescalado 0 a 10]--> M["Valor D: 8"]
+```
+
+:::
+
+::::
+
+## Descripción de datos
+
+```{r, results='asis'}
+print(dfSummary(elsoc %>% select(-fact_exp01, -fact_exp02),
+          headings=FALSE,
+          style = "multiline",
+          plain.ascii = FALSE,
+          tmp.img.dir = 'tmp',
+          varnumbers = FALSE,
+          silent= TRUE,
+          split.by = NULL),
+      max.tbl.height = 500,
+      method = 'render',
+      # css.class = 'table',
+      silent = TRUE,
+      footnote = NA)
+```
+
+```{r,warning=FALSE,message=FALSE}
+# Grado de importancia: Provenir de una familia adinerada (d05_01) <numeric> 
+# 
+# Confianza Social Generalizada (c02) <numeric> 
+# Altruismo Social Generalizado (c03) <numeric> 
+# Mayoria de la gente trata de ser justa (c04) <numeric> 
+
+elsoc_summary <- elsoc %>%
+  group_by(ola) %>%
+  summarise(across(all_of(columnas_para_reescalar), ~weighted.mean(., fact_exp01, na.rm = TRUE), .names = "{.col}"))
+
+elsoc_summary <- copy_labels(elsoc_summary, elsoc_long_2016_2022)
+
+mean_na <- function(...) {
+  mean_result <- mean(c(...), na.rm = TRUE)
+  if (is.nan(mean_result)) {
+    mean_result <- NA
+  }
+  return(mean_result)
+}
+```
+
+## Imputación de datos
+
+Es posible estimar las medias para todas las variables entre los años 2016 y 2019 inclusive. Sin embargo, 22 variables (40,7%) no están presentes en la ola 2021. La situación se repite para ola 2022 con 12 variables ausentes (22,2%). Se realiza una imputación de estos valores utilizando el último valor disponible. A continuación un ejemplo de imputación con las medias estimadas para las variables `c08_03` y `d05_01`. Como resultado, se tiene disponible el total de datos posibles para la fase posterior.
+
+::: panel-tabset
+
+### Antes
+
+```{r}
+elsoc_summary %>% select(ola,c08_03,d05_01) %>%
+  mutate(ola = as.factor(ola))%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+  nan_str = "NA",)%>%
+  align(align = "center", part = "all") %>% 
+  
+bg(i = ~ is.na(c08_03) ,j=~ c08_03, bg = "#E73C6D") %>%
+  color(i = ~ is.na(c08_03),j=~ c08_03, color='white')%>%
+bg(i = ~ is.na(d05_01) ,j=~ d05_01, bg = "#E73C6D") %>%
+  color(i = ~ is.na(d05_01),j=~ d05_01, color='white')
+```
+
+### Después
+
+```{r}
+# Se imputan valores faltantes con valores previos.
+elsoc_summary <- elsoc_summary %>%
+  fill(everything())
+```
+
+```{r}
+elsoc_summary %>% select(ola,c08_03,d05_01) %>%
+  mutate(ola = as.factor(ola))%>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit() %>% 
+  colformat_double(big.mark = "",decimal.mark = ",", digits = 1,
+                   na_str = "NA",
+  nan_str = "NA",)%>%
+  align(align = "center", part = "all") %>% 
+  
+bg(i = 5 ,j=~ c08_03, bg = "#66B16A") %>%
+  color(i = 5,j=~ c08_03, color='white')%>%
+bg(i = 6 ,j=~ d05_01, bg = "#66B16A") %>%
+  color(i = 6,j=~ d05_01, color='white')
+```
+
+::::
+
+# Construcción de los índices
+
+Las dimensiones fueron elaboradas siguiendo la [Propuesta de
+medición de Cohesión Social con indicadores ELSOC
+(COES)](https://ocscoes.github.io/cohesion-elsoc/propuesta-de-medición-de-cohesión-social-con-indicadores-de-elsoc.html). En el diagrama a continuación se  presenta la forma en que se construyen subdimensiones (en gris), dimensiones (en verde) e índices de cohesión (en negro) a través de los indicadores presentes en ELSOC (en azul).
+
+
+![](data/esquema_ELSOC2.svg)
+
+## Correlación indicadores por subdimensión
+
+Se aplica correlación de Spearman a indicadores que constituyen una subdimensión. Los valores son representativos para todos los países y todos los años estudiados. El análisis es realizado con datos no agrupados por ola.
+
+::: panel-tabset
+### Confianza en instituciones
+
+```{r Correlación Subdimensión Orgullo Nacional, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(c05_01, #confianza gobierno
+                    c05_02,
+                    c05_03,
+                    c05_04,
+                    c05_05,
+                    c05_06,
+                    c05_07,
+                    c05_08) %>%
+                    setNames(str_wrap(get_label(.), width = 30)))
+```
+
+### Participación cívica
+
+```{r Correlación Subdimensión Participación cívica, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(c08_01,
+                           c08_02,
+                           c08_03,
+                           c08_04) %>%
+                    setNames(str_wrap(get_label(.), width = 30)))
+```
+
+### Interés político
+
+```{r Correlación Subdimensión Interés político, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(c13,
+                           c14_01,
+                           c14_02) %>%
+                    setNames(str_wrap(get_label(.), width = 35)))
+```
+
+### Justicia distributiva
+
+```{r Correlación Subdimensión Justicia distributiva, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(c18_09,
+                           c18_10) %>%
+                    setNames(str_wrap(get_label(.), width = 35)))
+```
+
+### Surgir en la vida
+
+```{r Correlación Subdimensión Surgir en la vida, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(d05_01,
+                           d05_02,
+                           d05_03,
+                           d05_04) %>%
+                    setNames(str_wrap(get_label(.), width = 30)))
+```
+
+### Sociabilidad barrial
+
+```{r Correlación Subdimensión Sociabilidad barrial, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(t02_01,
+                           t02_02,
+                           t02_03,
+                           t02_04) %>%
+                    setNames(str_wrap(get_label(.), width = 30)))
+```
+
+### Satisfacción residencial
+
+```{r Correlación Subdimensión Satisfacción residencial, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(t06_01,
+                          t06_02,
+                          t06_03,
+                          t06_04,
+                          t06_05,
+                          t06_06,
+                          t06_07,
+                          t06_08,
+                          t07_01,
+                          t07_02) %>%
+                    setNames(str_wrap(get_label(.), width = 30)))
+```
+
+### Confianza interpersonal
+
+```{r Correlación Subdimensión Confianza interpersonal, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(c02,
+                           c03,
+                           c04) %>%
+                    setNames(str_wrap(get_label(.), width = 30)))
+```
+
+### Comportamiento prosocial
+
+```{r Correlación Subdimensión Comportamiento prosocial, warning=FALSE, fig.width=10, fig.align='center'}
+chart.Correlation(elsoc %>%
+                    select(c07_01,
+                          c07_02,
+                          c07_03,
+                          c07_04,
+                          c07_05,
+                          c07_06,
+                          c07_07,
+                          c07_08) %>%
+                    setNames(str_wrap(get_label(.), width = 30)))
+```
+
+:::
+
+## Visualización de medias por dimensión
+
+```{r, warning=FALSE,message=FALSE}
+elsoc_summary <- elsoc_summary %>%
+  group_by(ola) %>%
+  mutate(
+         sub_confianzainstitutciones= mean_na(c05_01, #confianza gobierno
+                                              c05_02,
+                                              c05_03,
+                                              c05_04,
+                                              c05_05,
+                                              c05_06,
+                                              c05_07,
+                                              c05_08),
+         sub_actitudhacialademocracia = mean_na(c01),
+         sub_participacioncivica = mean_na(c08_01,
+                                            c08_02,
+                                            c08_03,
+                                            c08_04),
+         sub_interespolitico = mean_na(c13,c14_01,c14_02),
+         sub_justiciadistributiva = mean_na(c18_09,c18_10),
+         sub_surgirenlavida = mean_na(d05_01,d05_02,d05_03,d05_04),
+         
+         sub_identidadnacional = mean_na(c32_02),
+         sub_orgullonacional = mean_na(c32_01),
+         sub_confianzavecinos = mean_na(t01),
+         sub_cohesionbarrial = mean_na(t02_01,t02_02,t02_03,t02_04),
+         sub_sociabilidadbarrial = mean_na(t03_01,t03_02,t03_03,t03_04),
+         sub_satisfaccionresidencial = mean_na(t06_01,
+                                              t06_02,
+                                              t06_03,
+                                              t06_04,
+                                              t06_05,
+                                              t06_06,
+                                              t06_07,
+                                              t06_08,
+                                              t07_01,
+                                              t07_02),
+         sub_confianzainterpersonal = mean_na(c02,c03,c04),
+         sub_comportamientoprosocial = mean_na(c07_01,
+                                              c07_02,
+                                              c07_03,
+                                              c07_04,
+                                              c07_05,
+                                              c07_06,
+                                              c07_07,
+                                              c07_08))
+
+elsoc_summary <- elsoc_summary %>%
+  group_by(ola) %>%
+  mutate(dim_sentidopertenencia = mean_na(sub_identidadnacional,sub_orgullonacional),
+         dim_calidaddevidaenelvecindario = mean_na(sub_confianzavecinos,
+                                                   sub_cohesionbarrial,
+                                                   sub_sociabilidadbarrial,
+                                                   sub_satisfaccionresidencial),
+         dim_redessociales = mean_na(sub_confianzainterpersonal,sub_comportamientoprosocial),
+         
+         
+         
+         dim_confianzainstitucionesdemocracia = mean_na(sub_confianzainstitutciones,
+                                                        sub_actitudhacialademocracia),
+         dim_participacionpolitica = mean_na(sub_participacioncivica,
+                                             sub_interespolitico),
+         dim_percepcionjusticia = mean_na(sub_justiciadistributiva,
+                                       sub_surgirenlavida)
+        )
+
+
+
+
+elsoc_summary <- label_to_colnames(elsoc_summary)
+
+elsoc_subs <- elsoc_summary %>%
+  select(starts_with("sub"))
+names(elsoc_subs)<-c("Ola", "Confianza en instituciones","Actitud hacia la democracia","Participación cívica","Interés político","Justicia distributiva",
+                     "Surgir en la vida","Identidad nacional","Orgullo nacional","Confianza en vecinos","Cohesión barrial","Sociabilidad barrial","Satisfacción residencial","Confianza interpersonal","Comportamiento prosocial")
+```
+
+```{r,warning=FALSE,message=FALSE}
+
+
+
+elsoc_subs <- elsoc_subs %>%
+  pivot_longer(
+    cols = -Ola, # Todas las columnas excepto 'id'
+    names_to = "Variable",
+    values_to = "Valor"
+  )
+elsoc_subs$Valor <- round(elsoc_subs$Valor,2)
+
+elsoc_dims <- elsoc_summary %>%
+  select(starts_with("dim"))
+names(elsoc_dims)<-c("Ola","Sentido de pertenencia","Calidad de vida en el vecindario","Redes sociales","Confianza en instituciones y democracia","Participación política","Percepción de justicia")
+elsoc_dims <- elsoc_dims %>%
+  pivot_longer(
+    cols = -Ola, # Todas las columnas excepto 'id'
+    names_to = "Variable",
+    values_to = "Valor"
+  )
+elsoc_dims$Valor <- round(elsoc_dims$Valor,2)
+
+plot<-ggplot(elsoc_subs, aes(x = Ola, y = Valor, color=Variable,group=Variable)) +
+  geom_point() +
+  geom_line() +
+  # geom_smooth(method = "lm", se = TRUE)+
+  theme_minimal()+
+  ggtitle(paste0('Subdimensiones de Cohesión Social ELSOC'))+
+  labs(
+    x = "Ola",
+    y = "Media (0-10)",
+    #color = "Tasa homofilia",
+    subtitle = "Datos por país.",
+    caption = paste("Datos ELSOC"))+
+  theme(legend.position='bottom',
+        #text=element_text(family=font_ggplot),
+        plot.title = element_text(face="bold"),
+        legend.title = element_text(
+                                    #size=size_title_legend,
+                                    face = "bold"
+        ), 
+        #legend.text = element_text(size=size_text_legend),
+        #legend.key.width = unit(size_key_legend, 'cm'),
+  )
+# ggplotly(plot)
+
+plot<-ggplot(elsoc_dims, aes(x = Ola, y = Valor, color=Variable,group=Variable)) +
+  geom_point() +
+  geom_line() +
+  # geom_smooth(method = "lm", se = TRUE)+
+  theme_minimal()+
+  ggtitle(paste0('Dimensiones de Cohesión Social ELSOC'))+
+  labs(
+    x = "Ola",
+    y = "Media (0-10)",
+    #color = "Tasa homofilia",
+    subtitle = "Datos por país.",
+    caption = paste("Datos ELSOC"))+
+  theme(legend.position='bottom',
+        #text=element_text(family=font_ggplot),
+        plot.title = element_text(face="bold"),
+        legend.title = element_text(
+                                    #size=size_title_legend,
+                                    face = "bold"
+        ), 
+        #legend.text = element_text(size=size_text_legend),
+        #legend.key.width = unit(size_key_legend, 'cm'),
+  )
+ggplotly(plot)
+
+```
+
+# Anexo
+
+Para el análisis se contemplan datos ELSOC de las olas 2016
+a 2022.
+
+::: panel-tabset
+
+## Media indicadores
+
+```{r}
+elsoc_summary %>% select(c(1,3:56)) %>%
+  ungroup() %>%
+  mutate_if(is.numeric, round, digits = 2) %>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit()
+```
+
+## Media subdimensiones
+
+```{r}
+elsoc_summary %>% select(c(1,57:70)) %>%
+  ungroup() %>%
+  mutate_if(is.numeric, round, digits = 2) %>%
+    setNames(c("Ola",
+             
+             "Confianza en instituciones",
+             "Actitud hacia la democracia",
+             "Participación cívica",
+             "Interés político",
+             "Justicia distributiva",
+             "Surgir en la vida",
+             "Identidad nacional",
+             "Orgullo nacional",
+             "Confianza en vecinos",
+             "Cohesión barrial",
+             "Sociabilidad barrial",
+             "Satisfacción residencial",
+             "Confianza interpersonal",
+             "Comportamiento prosocial")) %>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit()
+```
+
+## Media dimensiones
+
+```{r}
+elsoc_summary %>% select(c(1,71:76)) %>%
+  ungroup() %>%
+  mutate_if(is.numeric, round, digits = 2) %>%
+    setNames(c("Ola",
+             
+             "Sentido de pertenencia",
+             "Calidad de vida en el vecindario",
+             "Redes sociales",
+             "Confianza en instituciones y democracia",
+             "PArticipación política",
+             "Percepción de justicia")) %>%
+  flextable() %>%
+  theme_alafoli() %>%
+  autofit()
+  
+```
+
+:::        
+```{r, eval=FALSE}
+flourish <- elsoc_summary[,c(1,57:70)] %>%
+  setNames(c("Ola",
+             "Confianza en instituciones",
+             "Actitud hacia la democracia",
+             "Participación cívica",
+             "Interés político",
+             "Justicia distributiva",
+             "Surgir en la vida",
+             "Identidad nacional",
+             "Orgullo nacional",
+             "Confianza en vecinos",
+             "Cohesión barrial",
+             "Sociabilidad barrial",
+             "Satisfacción residencial",
+             "Confianza interpersonal",
+             "Comportamiento prosocial")) %>%
+  pivot_longer(cols = 2:15,names_to = "Variable",values_to = "Valor") %>%
+  pivot_wider(id_cols = Variable,names_from = Ola,values_from = Valor)
+write_csv(flourish,"data/elsoc_flourish.csv")
+```
+  

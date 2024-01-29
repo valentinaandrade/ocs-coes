@@ -2,6 +2,7 @@ baseurl = "https://ocs-coes.netlify.app/"
 title = "Observatorio de Cohesión Social"
 theme = "hugo-universal-theme"
 languageCode = "es-cl"
+ignoreFiles = [ "\\.qmd$", "\\.ipynb$", "\\.py$" ]
 # Site language. Available translations in the theme's `/i18n` directory.
 defaultContentLanguage = "es"
 # Enable comments by entering your Disqus shortname
@@ -54,9 +55,16 @@ paginate = 10
 [[menu.main]] # Submenu: shiny app - LAPOP
     identifier = "app.lapop" 
     parent     = "analisis"
-    name = "América Latina"
+    name = "LAPOP"
     url  = "/app/"
-    weight = 1    
+    weight = 1 
+    
+[[menu.main]] # Submenu: shiny app - LAPOP
+    identifier = "app.LA" 
+    parent     = "analisis"
+    name = "América Latina"
+    url  = "/cohesion-LA/"
+    weight = 2
 
 #[[menu.main]] # Submenu: documentacion shiny
 #    identifier = "app.docu"
